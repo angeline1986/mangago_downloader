@@ -3,10 +3,10 @@
   "max_workers": 3,
   "retry_count": 3,
   "timeout": 30,
+  "page_delay": 2.0,
   "overwrite_existing": false,
   "format": "images",
   "delete_images": false,
   "image_format": "png",
-  "keep_originals": true,
-  "page_delay": 2.0
+  "keep_originals": true
 }

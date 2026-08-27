@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         for w in (self.search_page,self.details_widget,self.progress_widget,self.download_widget): self.stack.addWidget(w)
         self.status_bar=self.statusBar(); self.status_bar.showMessage("Pronto")
     def _connections(self):
-        self.navigation.view_changed.connect(self._view); self.search_widget.search_requested.connect(self._search); self.results_widget.manga_selected.connect(self._select_manga); self.results_widget.page_changed.connect(self._search_page); self.details_widget.chapters_selected.connect(self._chapters_selected); self.download_widget.download_requested.connect(self._download)
+        self.navigation.view_changed.connect(self._view); self.search_widget.search_requested.connect(self._search); self.results_widget.manga_selected.connect(self._select_manga); self.results_widget.page_changed.connect(self._search_page); self.details_widget.chapters_selected.connect(self._chapters_selected)
         self.search_controller.search_started.connect(self.results_widget.show_loading); self.search_controller.search_completed.connect(self._search_done); self.search_controller.search_failed.connect(self._search_fail)
         self.manga_controller.details_completed.connect(self._manga_done); self.manga_controller.chapters_completed.connect(self._chapters_done); self.manga_controller.operation_failed.connect(self._failed)
         self.download_controller.download_started.connect(self._download_started); self.download_controller.urls_progress.connect(lambda c,t:self.status_bar.showMessage(f"Preparando capítulos: {c}/{t}")); self.download_controller.urls_completed.connect(lambda:self.status_bar.showMessage("Iniciando download...")); self.download_controller.download_progress.connect(lambda c,t:self.status_bar.showMessage(f"Capítulos: {c}/{t}")); self.download_controller.page_progress.connect(self.progress_widget.update_chapter_progress); self.download_controller.chapter_downloaded.connect(self.progress_widget.chapter_completed); self.download_controller.download_completed.connect(self._download_done); self.download_controller.status_updated.connect(self.status_bar.showMessage); self.download_controller.operation_failed.connect(self._failed)
@@ -82,7 +82,10 @@ class MainWindow(QMainWindow):
     def _select_manga(self,result): self.navigation.select("details"); self.manga_controller.get_manga_details(result.manga.url); self.header.set_status("Carregando","warning")
     def _manga_done(self,manga:Manga): self.current_manga=manga; self.details_widget.update_manga(manga); self.header.set_status("Pronto","success")
     def _chapters_done(self,chapters:List[Chapter]): self.current_chapters=chapters; self.details_widget.update_chapters(chapters); self.status_bar.showMessage(f"{len(chapters)} capítulos encontrados")
-    def _chapters_selected(self,manga,chapters): self.current_manga=manga; self.current_chapters=chapters; self.download_widget.enable_download(True); self.navigation.select("download"); self.status_bar.showMessage(f"{len(chapters)} capítulos selecionados")
+    def _chapters_selected(self,manga,chapters):
+        self.current_manga=manga; self.current_chapters=chapters
+        self.status_bar.showMessage(f"{len(chapters)} capítulos selecionados")
+        self._download(self.download_widget.get_download_config())
     def _download(self,cfg):
         if not self.current_manga or not self.current_chapters: QMessageBox.warning(self,"Seleção","Selecione pelo menos um capítulo."); return
         self.download_config=cfg; self.navigation.select("progress"); self.download_controller.download_chapters(self.current_manga,self.current_chapters,cfg.get("max_workers",1),cfg)

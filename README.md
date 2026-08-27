@@ -156,3 +156,21 @@ Relevant GUI configuration keys:
 ```
 
 Use `image_format: "original"` to skip conversion and keep only the source format.
+
+## Web V2 (HTML/CSS/JS local)
+
+A interface Web V2 é executada apenas em `127.0.0.1` e reutiliza o mesmo núcleo Python (Playwright, downloader, conversores e configuração). A GUI PyQt6 continua disponível como fallback.
+
+```bash
+python -m pip install -e .
+playwright install chromium
+mangago-downloader-web
+```
+
+O navegador abre automaticamente em `http://127.0.0.1:8765`. Para iniciar sem abrir o browser:
+
+```bash
+MANGAGO_WEB_NO_BROWSER=1 mangago-downloader-web
+```
+
+A Web V2 oferece busca, URL direta, detalhes e capítulos, seleção por intervalo, light/dark theme, ajustes com salvamento automático e progresso real por capítulo e por página. O delay padrão entre páginas continua em **2,0 segundos**.

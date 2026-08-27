@@ -47,6 +47,10 @@ class StyleManager:
         QPushButton.nav:checked {{ background: {c['primary_soft']}; color: {c['primary']}; font-weight: 700; }}
         QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 9px; padding: 8px 10px; color: {c['text']}; selection-background-color: {c['primary']}; }}
         QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border: 1px solid {c['primary']}; }}
+        QSpinBox, QDoubleSpinBox {{ padding-right: 28px; min-height: 20px; }}
+        QSpinBox::up-button, QDoubleSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 24px; border-left: 1px solid {c['border']}; border-bottom: 1px solid {c['border']}; background: {c['surface2']}; border-top-right-radius: 8px; }}
+        QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 24px; border-left: 1px solid {c['border']}; background: {c['surface2']}; border-bottom-right-radius: 8px; }}
+        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{ background: {c['surface3']}; }}
         QTableWidget, QListWidget {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 10px; alternate-background-color: {c['surface3']}; gridline-color: {c['border']}; selection-background-color: {c['primary_soft']}; selection-color: {c['text']}; }}
         QTableWidget::item, QListWidget::item {{ padding: 8px; }}
         QTableWidget::item:hover, QListWidget::item:hover {{ background: {c['row_hover']}; }}
@@ -54,6 +58,19 @@ class StyleManager:
         QCheckBox {{ spacing: 8px; color: {c['text2']}; }}
         QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {c['border']}; border-radius: 4px; background: {c['surface']}; }}
         QCheckBox::indicator:checked {{ background: {c['primary']}; border-color: {c['primary']}; }}
+        QFrame#settingsCard {{ background: {c['surface']}; border: 1px solid {c['border']}; border-radius: 12px; }}
+        QFrame#settingsRow {{ background: transparent; border: 0; border-top: 1px solid {c['border']}; }}
+        QWidget#settingsControlHost {{ background: transparent; }}
+        QWidget#settingsContent {{ background: transparent; }}
+        QLabel.settingsSectionTitle {{ font-size: 16px; font-weight: 700; color: {c['text']}; }}
+        QLabel.settingLabel {{ font-size: 13px; font-weight: 650; color: {c['text']}; }}
+        QPushButton.segment {{ background: {c['surface2']}; color: {c['text2']}; border: 1px solid {c['border']}; border-radius: 0; padding: 8px 14px; min-width: 84px; }}
+        QPushButton.segment[segmentPosition="first"] {{ border-top-left-radius: 9px; border-bottom-left-radius: 9px; }}
+        QPushButton.segment[segmentPosition="last"] {{ border-top-right-radius: 9px; border-bottom-right-radius: 9px; }}
+        QPushButton.segment:checked {{ background: {c['primary_soft']}; color: {c['primary']}; border-color: {c['primary']}; font-weight: 700; }}
+        QPushButton.segment:hover {{ color: {c['text']}; background: {c['surface3']}; }}
+        QCheckBox#switch::indicator {{ width: 34px; height: 18px; border-radius: 9px; border: 1px solid {c['border']}; background: {c['surface2']}; }}
+        QCheckBox#switch::indicator:checked {{ background: {c['primary']}; border-color: {c['primary']}; }}
         QRadioButton {{ spacing: 8px; color: {c['text2']}; }}
         QProgressBar {{ background: {c['surface2']}; border: 0; border-radius: 6px; text-align: center; color: {c['text2']}; min-height: 10px; }}
         QProgressBar::chunk {{ background: {c['primary']}; border-radius: 6px; }}

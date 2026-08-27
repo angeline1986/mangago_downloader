@@ -209,3 +209,12 @@ The GUI integrates seamlessly with the existing core modules without modifying a
 The Mangago Downloader GUI provides a beautiful, modern, and powerful interface for downloading your favorite manga. The intuitive design makes it easy for anyone to use, while advanced features cater to power users.
 
 **Happy downloading!** 📚✨
+## Interface Web V2
+
+Além da interface PyQt6, o projeto possui uma nova interface local em HTML/CSS/JavaScript. Ela não publica nenhum servidor externo: o Flask escuta exclusivamente em `127.0.0.1`.
+
+```bash
+mangago-downloader-web
+```
+
+A interface PyQt6 (`mangago-downloader-gui`) foi preservada para comparação e fallback durante a migração.

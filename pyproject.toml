@@ -44,11 +44,15 @@ dev = [
 [project.scripts]
 mangago-downloader = "cli.main_cli:app"
 mangago-downloader-gui = "gui.main_gui:main"
+mangago-downloader-web = "webapp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/Yui007/mangago_downloader"
 Repository = "https://github.com/Yui007/mangago_downloader"
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cli*", "gui*", "src*"]
+include = ["cli*", "gui*", "src*", "webapp*"]
 exclude = [".venv*", "tests*"]
+
+[tool.setuptools.package-data]
+webapp = ["templates/*.html", "static/*.css", "static/*.js"]

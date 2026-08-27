@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mangago Downloader</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">M</div>
+        <div>
+          <strong>Mangago Downloader</strong>
+          <small>Download organizado, simples e visual</small>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="status"><i></i><span id="globalStatus">Pronto</span></span>
+        <button class="icon-button" id="themeToggle" title="Alternar tema" aria-label="Alternar tema">☾</button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div class="nav-label">Navegação</div>
+      <nav>
+        <button class="nav-item active" data-page="search"><span>⌕</span> Buscar</button>
+        <button class="nav-item" data-page="manga" id="mangaNav" disabled><span>▣</span> Mangá</button>
+        <button class="nav-item" data-page="downloads"><span>↓</span> Downloads <em id="downloadBadge"></em></button>
+        <button class="nav-item" data-page="settings"><span>⚙</span> Ajustes</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div>Downloads: <b id="downloadCount">0</b></div>
+        <div id="footerState">Pronto</div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <section class="page active" id="page-search">
+        <div class="page-heading split-heading">
+          <div>
+            <h1>Buscar mangá</h1>
+            <p>Pesquise pelo título ou cole uma URL direta do Mangago.</p>
+          </div>
+          <div class="mode-switch" role="group" aria-label="Modo de busca">
+            <button class="selected" data-mode="title">Título</button>
+            <button data-mode="url">URL direta</button>
+          </div>
+        </div>
+
+        <div class="search-bar">
+          <input id="searchInput" type="text" placeholder="Digite o nome do mangá…" autocomplete="off" />
+          <button class="primary" id="searchButton">Buscar</button>
+        </div>
+        <div class="hint" id="searchHint">Os resultados aparecerão abaixo.</div>
+
+        <div class="section-title-row">
+          <h2>Resultados</h2>
+          <span class="muted" id="resultsMeta"></span>
+        </div>
+        <div class="results-grid" id="resultsGrid">
+          <div class="empty-state">
+            <div class="empty-icon">⌕</div>
+            <strong>Nenhum resultado ainda</strong>
+            <span>Busque um título ou informe uma URL direta para começar.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-manga">
+        <div class="manga-hero">
+          <div class="cover-shell"><img id="mangaCover" alt="Capa" /></div>
+          <div class="manga-info">
+            <div class="eyebrow">Mangago</div>
+            <h1 id="mangaTitle">Mangá</h1>
+            <div class="author" id="mangaAuthor"></div>
+            <div class="chips" id="mangaGenres"></div>
+            <button class="link-button" id="summaryToggle">Ver resumo</button>
+            <p class="summary hidden" id="mangaSummary"></p>
+          </div>
+          <div class="count-card"><b id="chapterCount">0</b><span>capítulos</span></div>
+        </div>
+
+        <div class="section-title-row chapters-heading">
+          <div>
+            <h2>Capítulos</h2>
+            <span class="muted"><b id="selectedCount">0</b> selecionados</span>
+          </div>
+          <div class="chapter-actions">
+            <button class="secondary" id="selectAll">Todos</button>
+            <button class="secondary" id="selectNone">Nenhum</button>
+          </div>
+        </div>
+
+        <div class="chapter-toolbar">
+          <input id="chapterFilter" type="text" placeholder="Buscar capítulo…" />
+          <div class="range-box">
+            <span>Intervalo</span>
+            <input id="rangeStart" type="number" min="1" value="1" />
+            <span>—</span>
+            <input id="rangeEnd" type="number" min="1" value="1" />
+            <button class="secondary" id="selectRange">Selecionar</button>
+          </div>
+        </div>
+
+        <div class="table-card chapter-table-card">
+          <table>
+            <thead><tr><th class="check-col"></th><th>Capítulo</th><th>Título</th></tr></thead>
+            <tbody id="chapterRows"></tbody>
+          </table>
+        </div>
+        <div class="sticky-actions">
+          <span class="muted" id="downloadSummary">Selecione capítulos para baixar.</span>
+          <div>
+            <button class="secondary" id="downloadAll">Baixar todos</button>
+            <button class="primary" id="downloadSelected" disabled>Baixar selecionados</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-downloads">
+        <div class="page-heading">
+          <h1>Downloads</h1>
+          <p>Acompanhe o progresso por capítulo e por página.</p>
+        </div>
+        <div id="downloadsContainer" class="downloads-stack">
+          <div class="empty-card">Nenhum download iniciado nesta sessão.</div>
+        </div>
+      </section>
+
+      <section class="page" id="page-settings">
+        <div class="page-heading settings-heading">
+          <div>
+            <h1>Ajustes de download</h1>
+            <p>Defina formato, destino e comportamento dos downloads.</p>
+          </div>
+          <span class="saved-badge" id="saveState">Salvo automaticamente</span>
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-card-head"><h2>Saída</h2><p>Escolha onde os arquivos serão salvos e em qual formato serão gerados.</p></div>
+          <div class="setting-row">
+            <div><strong>Pasta de destino</strong><small>Local onde capítulos, PDFs ou CBZs serão gravados.</small></div>
+            <input class="setting-control wide" id="downloadLocation" placeholder="~/Downloads/mangago" />
+          </div>
+          <div class="setting-row">
+            <div><strong>Formato do download</strong><small>Imagens mantêm cada página separada; PDF e CBZ agrupam o capítulo.</small></div>
+            <div class="segmented" id="formatSegment">
+              <button data-value="images" class="selected">Imagens</button><button data-value="pdf">PDF</button><button data-value="cbz">CBZ</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div><strong>Formato das imagens</strong><small>PNG evita nova compressão com perdas; Original preserva o formato recebido.</small></div>
+            <select class="setting-control" id="imageFormat"><option value="png">PNG — sem perda adicional</option><option value="original">Original</option></select>
+          </div>
+          <div class="setting-row">
+            <div><strong>Manter arquivo original</strong><small>Salva também a imagem recebida do servidor na pasta /originais.</small></div>
+            <label class="switch"><input id="keepOriginals" type="checkbox" /><span></span></label>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-card-head"><h2>Desempenho</h2><p>Controle o ritmo das consultas e como o aplicativo reage a falhas.</p></div>
+          <div class="setting-row"><div><strong>Downloads simultâneos</strong><small>Quantidade máxima configurada para processamento.</small></div><input class="number-control" id="maxWorkers" type="number" min="1" max="10" /></div>
+          <div class="setting-row"><div><strong>Intervalo entre páginas</strong><small>Pausa antes de consultar a próxima página. Padrão: 2,0 segundos.</small></div><div class="unit-input"><input id="pageDelay" type="number" min="0" max="30" step="0.5" /><span>s</span></div></div>
+          <div class="setting-row"><div><strong>Tentativas em caso de falha</strong><small>Número de novas tentativas quando uma página ou imagem não responde.</small></div><input class="number-control" id="retryCount" type="number" min="0" max="20" /></div>
+          <div class="setting-row"><div><strong>Timeout</strong><small>Tempo máximo de espera por uma operação antes de tratá-la como falha.</small></div><div class="unit-input"><input id="timeout" type="number" min="1" max="300" /><span>s</span></div></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

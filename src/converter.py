@@ -4,6 +4,7 @@ Supports converting downloaded manga images to PDF and CBZ formats.
 """
 import os
 import zipfile
+import re
 from pathlib import Path
 from typing import List, Optional
 import img2pdf
@@ -136,7 +137,11 @@ def _get_image_files(directory: str) -> List[str]:
     except FileNotFoundError:
         print(f"Directory not found: {directory}")
 
-    # Sort numerically based on filename (e.g., 1.jpg, 2.jpg, 10.jpg)
-    image_files.sort(key=lambda f: int(os.path.splitext(os.path.basename(f))[0]))
+    # Natural numeric sort also supports the downloader's page-001.png naming.
+    def natural_key(path: str):
+        name = os.path.splitext(os.path.basename(path))[0]
+        return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
+
+    image_files.sort(key=natural_key)
     
     return image_files
