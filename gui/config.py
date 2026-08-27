@@ -20,9 +20,12 @@ class ConfigManager:
             "max_workers": 5,
             "retry_count": 3,
             "timeout": 30,
+            "page_delay": 2.0,
             "overwrite_existing": False,
             "format": "images",
-            "delete_images": False
+            "delete_images": False,
+            "image_format": "png",
+            "keep_originals": True
         }
         self.config = self.load_config()
     

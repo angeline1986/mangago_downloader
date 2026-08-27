@@ -106,6 +106,7 @@ class DownloadWorker(QThread):
     download_completed = pyqtSignal(object)  # DownloadResult
     download_failed = pyqtSignal(object, str)  # Chapter, Error message
     progress_updated = pyqtSignal(int)  # Progress value
+    page_progress = pyqtSignal(object, int, int)  # Chapter, current page, total pages
     status_updated = pyqtSignal(str)  # Status message
     
     def __init__(self, manga: Manga, chapters: List[Chapter], max_workers: int = 5, download_config: Optional[dict] = None):
@@ -120,7 +121,14 @@ class DownloadWorker(QThread):
         try:
             # Get download directory from config, with fallback to default
             download_dir = self.download_config.get("download_location", "downloads")
-            self.downloader = ChapterDownloader(max_workers=self.max_workers, download_dir=download_dir)
+            self.downloader = ChapterDownloader(
+                max_workers=self.max_workers,
+                download_dir=download_dir,
+                image_format=self.download_config.get("image_format", "png"),
+                keep_originals=self.download_config.get("keep_originals", True),
+                page_delay=self.download_config.get("page_delay", 2.0),
+                progress_callback=lambda chapter, current, total: self.page_progress.emit(chapter, current, total),
+            )
             
             for i, chapter in enumerate(self.chapters):
                 self.status_updated.emit(f"Downloading Chapter {chapter.number}...")
@@ -145,6 +153,7 @@ class ConversionWorker(QThread):
     conversion_completed = pyqtSignal(list)  # List[str] - created files
     conversion_failed = pyqtSignal(str)  # Error message
     progress_updated = pyqtSignal(int)  # Progress value
+    page_progress = pyqtSignal(object, int, int)  # Chapter, current page, total pages
     status_updated = pyqtSignal(str)  # Status message
     
     def __init__(self, manga_dir: str, format_type: str, delete_images: bool = False):
@@ -233,6 +242,7 @@ class DownloadController(QObject):
     urls_progress = pyqtSignal(int, int)  # current, total
     urls_completed = pyqtSignal()
     download_progress = pyqtSignal(int, int)  # current, total
+    page_progress = pyqtSignal(object, int, int)  # chapter, current page, total pages
     download_completed = pyqtSignal(list)  # List[DownloadResult]
     chapter_downloaded = pyqtSignal(object)  # DownloadResult
     operation_failed = pyqtSignal(str)
@@ -296,6 +306,7 @@ class DownloadController(QObject):
         self.download_worker.progress_updated.connect(
             lambda current: self.download_progress.emit(current, len(valid_chapters))
         )
+        self.download_worker.page_progress.connect(self.page_progress.emit)
         self.download_worker.status_updated.connect(self.status_updated.emit)
         self.download_worker.finished.connect(
             lambda: self.download_completed.emit(self.results)

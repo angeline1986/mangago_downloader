@@ -55,7 +55,7 @@ class AnimatedToggle(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         # Draw track
-        track_color = "#8B5CF6" if self._checked else "#374151"
+        track_color = "#6558D9" if self._checked else "#374151"
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(Qt.GlobalColor.transparent))
         

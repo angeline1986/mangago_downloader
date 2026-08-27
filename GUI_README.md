@@ -41,7 +41,7 @@ A beautiful, modern graphical user interface for the Mangago Downloader project 
 Ensure you have all dependencies installed:
 
 ```bash
-pip install PyQt6 httpx beautifulsoup4 selenium img2pdf Pillow
+pip install PyQt6 httpx beautifulsoup4 playwright img2pdf Pillow
 ```
 
 ### Launching the GUI
@@ -152,7 +152,7 @@ Switch themes anytime using the theme toggle button in the header!
 # Check if PyQt6 is installed
 pip install PyQt6
 
-# Verify Chrome/ChromeDriver
+# Verify Playwright Chromium
 # Download from: https://chromedriver.chromium.org/
 ```
 
@@ -170,7 +170,7 @@ pip install PyQt6
 ### Error Messages
 
 #### "Chrome Driver Error"
-Download and install ChromeDriver from the official website and ensure it's in your PATH.
+Run `playwright install chromium` once after installing the Python dependencies.
 
 #### "Dependency Error"
 Install missing dependencies using pip:

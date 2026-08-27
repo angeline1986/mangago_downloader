@@ -31,7 +31,7 @@ dependencies = [
     "PyQt6>=6.5.0",
     "img2pdf>=0.5.0",
     "Pillow>=10.0.0",
-    "selenium>=4.0.0"
+    "playwright>=1.48.0"
 ]
 
 [project.optional-dependencies]
@@ -48,3 +48,7 @@ mangago-downloader-gui = "gui.main_gui:main"
 [project.urls]
 Homepage = "https://github.com/Yui007/mangago_downloader"
 Repository = "https://github.com/Yui007/mangago_downloader"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cli*", "gui*", "src*"]
+exclude = [".venv*", "tests*"]

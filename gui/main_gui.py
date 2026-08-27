@@ -25,24 +25,24 @@ class SplashScreen(QSplashScreen):
     def __init__(self):
         # Create a simple splash screen pixmap
         pixmap = QPixmap(400, 300)
-        pixmap.fill(QColor("#0F172A"))
+        pixmap.fill(QColor("#11131A"))
         
         # Draw content on splash screen
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         # Title
-        painter.setPen(QColor("#F8FAFC"))
+        painter.setPen(QColor("#F1F3F8"))
         title_font = QFont("Arial", 24, QFont.Weight.Bold)
         painter.setFont(title_font)
         painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "Mangago Downloader")
         
         # Subtitle
-        painter.setPen(QColor("#8B5CF6"))
+        painter.setPen(QColor("#8B7CF6"))
         subtitle_font = QFont("Arial", 12)
         painter.setFont(subtitle_font)
         subtitle_rect = pixmap.rect().adjusted(0, 60, 0, 0)
-        painter.drawText(subtitle_rect, Qt.AlignmentFlag.AlignCenter, "Loading modern interface...")
+        painter.drawText(subtitle_rect, Qt.AlignmentFlag.AlignCenter, "Carregando interface...")
         
         painter.end()
         
@@ -88,9 +88,9 @@ def check_dependencies() -> Optional[str]:
         missing_deps.append("beautifulsoup4")
     
     try:
-        from selenium import webdriver
+        import playwright
     except ImportError:
-        missing_deps.append("selenium")
+        missing_deps.append("playwright")
     
     try:
         import img2pdf
@@ -103,28 +103,24 @@ def check_dependencies() -> Optional[str]:
         missing_deps.append("Pillow")
     
     if missing_deps:
-        return f"Missing required dependencies: {', '.join(missing_deps)}\n\nPlease install them using:\npip install {' '.join(missing_deps)}"
+        return f"Missing required dependencies: {', '.join(missing_deps)}\n\nPlease install them using:\npip install {' '.join(missing_deps)}\n\nThen run: playwright install chromium"
     
     return None
 
 
 def check_chrome_driver():
-    """Check if Chrome and ChromeDriver are available."""
+    """Check whether Playwright Chromium is installed and launchable."""
     try:
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        
-        # Quick test
-        driver = webdriver.Chrome(options=options)
-        driver.quit()
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            browser.close()
         return True
     except Exception as e:
-        return f"Chrome/ChromeDriver not available: {str(e)}\n\nPlease install Chrome browser and ChromeDriver."
+        return (
+            f"Playwright Chromium is not available: {e}\n\n"
+            "Run: playwright install chromium"
+        )
 
 
 def create_application():
@@ -182,7 +178,7 @@ def main():
     
     # Create main window
     try:
-        splash.showMessage("Initializing interface...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, QColor("#8B5CF6"))
+        splash.showMessage("Initializing interface...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, QColor("#8B7CF6"))
         app.processEvents()
         
         main_window = MainWindow()
@@ -193,7 +189,7 @@ def main():
             main_window.show()
             logger.info("GUI application started successfully")
         
-        QTimer.singleShot(2000, show_main_window)  # Show splash for 2 seconds
+        QTimer.singleShot(500, show_main_window)  # Show splash for 2 seconds
         
     except Exception as e:
         splash.close()

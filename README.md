@@ -28,13 +28,13 @@ A modern manga downloader for Mangago.me featuring both a beautiful interactive 
 
    Or install dependencies directly:
    ```bash
-   pip install httpx beautifulsoup4 typer rich PyQt6 img2pdf Pillow selenium
+   pip install httpx beautifulsoup4 typer rich PyQt6 img2pdf Pillow playwright
    ```
 
-3. Install ChromeDriver:
-   - Download ChromeDriver from https://chromedriver.chromium.org/
-   - Add ChromeDriver to your system PATH
-   - Or place ChromeDriver in the project directory
+3. Install the Playwright Chromium runtime:
+   ```bash
+   playwright install chromium
+   ```
 
 ## Usage
 
@@ -134,9 +134,25 @@ mangago_downloader/
 - PyQt6 (for GUI)
 - img2pdf (for PDF conversion)
 - Pillow (for image processing)
-- selenium (for web scraping)
+- playwright (browser automation and dynamic reader scraping)
 - zipfile (built-in, for CBZ conversion)
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+## Playwright + validated image pipeline
+
+The downloader uses Playwright instead of Selenium/ChromeDriver. For paginated Mangago readers it identifies the current `/pg-N/` page and locates the matching image inside `#pic_container`, with visible/CDN-image fallbacks. Downloads are validated as real images before being written.
+
+Individual image output defaults to **PNG**. PNG conversion is lossless with respect to the downloaded source: it does not add JPEG-style quality loss, although it cannot restore detail already lost in a source JPEG/WebP. When `keep_originals` is enabled, the exact downloaded source is preserved under the chapter's `originais/` folder.
+
+Relevant GUI configuration keys:
+
+```json
+{
+  "image_format": "png",
+  "keep_originals": true
+}
+```
+
+Use `image_format: "original"` to skip conversion and keep only the source format.

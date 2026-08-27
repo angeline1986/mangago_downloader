@@ -93,7 +93,7 @@ class MangaCard(QFrame):
         
         self.genres_label = QLabel(genres_text)
         self.genres_label.setProperty("class", "caption")
-        self.genres_label.setStyleSheet("color: #8B5CF6;")
+        self.genres_label.setStyleSheet("color: #6558D9;")
         
         metadata_layout.addWidget(self.chapters_label)
         metadata_layout.addStretch()
@@ -433,7 +433,7 @@ class ResultsWidget(QWidget):
         # Loading icon (spinning)
         self.loading_icon = QLabel("⟳")
         self.loading_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.loading_icon.setStyleSheet("font-size: 48px; color: #8B5CF6;")
+        self.loading_icon.setStyleSheet("font-size: 48px; color: #6558D9;")
         
         # Loading text
         loading_text = QLabel("Searching for manga...")

@@ -1,521 +1,342 @@
-"""
-Downloader engine with threading support for the Mangago Downloader.
-"""
+"""Chapter discovery, image location and validated image downloading."""
+from __future__ import annotations
+
+import io
+import time
 import os
 import re
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Union
 from urllib.parse import urljoin, urlparse
 
-import httpx
-import requests # Import requests
 from bs4 import BeautifulSoup, Tag
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchElementException
+from PIL import Image, UnidentifiedImageError
 
+from .browser import browser_page
 from .models import Chapter, Manga, DownloadResult
-from .utils import SessionManager, NetworkError, ParsingError, DownloadError, create_directory, sanitize_filename
+from .utils import SessionManager, ParsingError, DownloadError, create_directory, sanitize_filename
+
+IMAGE_HOST_HINTS = ("mangapicgallery.com", "mangago", "youhim")
+SUPPORTED_IMAGE_MODES = {"original", "png"}
+
+
+def _page_number_from_url(url: str) -> Optional[int]:
+    match = re.search(r"/pg-(\d+)/?", url)
+    return int(match.group(1)) if match else None
+
+
+def _chapter_identity(url: str) -> str:
+    """Return the path portion that identifies a chapter independently of /pg-N/."""
+    path = urlparse(url).path
+    return re.sub(r"/pg-\d+/?$", "", path.rstrip("/"))
+
+
+def _is_image_url(url: Optional[str]) -> bool:
+    if not url or not url.startswith(("http://", "https://")):
+        return False
+    host = urlparse(url).netloc.lower()
+    return any(hint in host for hint in IMAGE_HOST_HINTS) or bool(
+        re.search(r"\.(?:jpe?g|png|webp|gif)(?:\?|$)", url, re.I)
+    )
+
+
+def _extract_current_mangago_image(page, page_number: Optional[int]) -> Optional[str]:
+    """Playwright equivalent of the proven console locator strategy."""
+    candidates: List[str] = []
+    if page_number is not None:
+        candidates.extend([
+            f"#pic_container img#page{page_number}",
+            f"#pic_container img.page{page_number}",
+        ])
+    candidates.extend([
+        "#pic_container img:visible",
+        '#pic_container img[src*="mangapicgallery.com"]',
+    ])
+
+    for selector in candidates:
+        locator = page.locator(selector)
+        count = locator.count()
+        for idx in range(count):
+            src = locator.nth(idx).get_attribute("src") or locator.nth(idx).get_attribute("data-src")
+            if _is_image_url(src):
+                return src
+    return None
+
+
+def _collect_longstrip_images(page) -> List[str]:
+    """Scroll a long-strip reader and collect unique content image URLs in DOM order."""
+    previous = -1
+    stable = 0
+    for _ in range(120):
+        page.evaluate("window.scrollBy(0, Math.max(window.innerHeight * 0.85, 700))")
+        page.wait_for_timeout(180)
+        count = page.locator("#pic_container img, img[id^='page'], img[src*='mangapicgallery.com']").count()
+        if count == previous:
+            stable += 1
+            if stable >= 4:
+                break
+        else:
+            stable = 0
+            previous = count
+    page.evaluate("window.scrollTo(0, 0)")
+
+    urls: List[str] = []
+    seen = set()
+    locator = page.locator("#pic_container img, img[id^='page'], img[src*='mangapicgallery.com']")
+    for idx in range(locator.count()):
+        src = locator.nth(idx).get_attribute("src") or locator.nth(idx).get_attribute("data-src")
+        if _is_image_url(src) and src not in seen:
+            seen.add(src)
+            urls.append(src)
+    return urls
+
+
+def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
+    """Collect chapter image URLs with Playwright, using reader-aware selectors."""
+    if not chapter_url:
+        raise ParsingError("Chapter URL is invalid.")
+
+    with browser_page(headless=True) as page:
+        page.goto(chapter_url, wait_until="domcontentloaded", timeout=30_000)
+        page.locator("body").wait_for(state="attached")
+
+        domain = urlparse(page.url).netloc.lower()
+        if domain.endswith("mangago.me") and "/pg-" in page.url:
+            urls: List[str] = []
+            seen_urls = set()
+            original_identity = _chapter_identity(page.url)
+
+            # Prefer the chapter's own total_pages JS variable, then visible counter.
+            try:
+                total_pages = page.evaluate("() => Number(window.total_pages || 0)") or 0
+            except Exception:
+                total_pages = 0
+            if not total_pages:
+                try:
+                    text = page.locator(".multi_pg_tip.left").first.inner_text()
+                    match = re.search(r"/(\d+)\)?", text)
+                    total_pages = int(match.group(1)) if match else 0
+                except Exception:
+                    total_pages = 0
+
+            visited = set()
+            while True:
+                current = page.url
+                if current in visited:
+                    break
+                visited.add(current)
+                number = _page_number_from_url(current)
+
+                src = _extract_current_mangago_image(page, number)
+                if src and src not in seen_urls:
+                    seen_urls.add(src)
+                    urls.append(src)
+
+                if total_pages and len(urls) >= total_pages:
+                    break
+
+                next_link = page.locator("a.next_page").first
+                if not next_link.count():
+                    break
+                href = next_link.get_attribute("href")
+                if not href:
+                    break
+                next_url = urljoin(current, href)
+                if _chapter_identity(next_url) != original_identity:
+                    break
+
+                page.goto(next_url, wait_until="domcontentloaded", timeout=30_000)
+                page.locator("#pic_container").wait_for(state="attached", timeout=15_000)
+
+            if not urls:
+                raise ParsingError("No chapter images found in Mangago reader.")
+            return urls
+
+        # Long-strip or alternate readers: one rendered page can hold many images.
+        urls = _collect_longstrip_images(page)
+        if not urls:
+            raise ParsingError("No chapter images found.")
+        return urls
+
+
+def _parse_chapters_from_html(html: str, base_url: str) -> List[Chapter]:
+    soup = BeautifulSoup(html, "html.parser")
+    chapters: List[Chapter] = []
+
+    table = soup.find("table", class_="listing")
+    if isinstance(table, Tag):
+        links = table.select("a.chico")
+    else:
+        links = soup.find_all("a", href=re.compile(r"/(?:read-manga|chapter)/"))
+
+    seen = set()
+    for link in links:
+        title = link.get_text(" ", strip=True)
+        href = link.get("href")
+        if not isinstance(href, str) or not title:
+            continue
+        url = urljoin(base_url, href)
+        if url in seen:
+            continue
+        seen.add(url)
+        match = re.search(r"(?:Ch\.?|Chapter\s*)(\d+(?:\.\d+)?)", title, re.I)
+        if not match:
+            continue
+        number = float(match.group(1))
+        chapters.append(Chapter(number=number, title=title, url=url))
+    return sorted(chapters, key=lambda ch: ch.number)
+
+
+def get_chapter_list(source: Union[str, object]) -> List[Chapter]:
+    """Fetch chapter list. Accepts a manga URL; legacy caller handles remain tolerated."""
+    manga_url = source if isinstance(source, str) else getattr(source, "current_url", None)
+    if not manga_url:
+        raise DownloadError("Could not determine manga URL for chapter listing.")
+
+    with browser_page(headless=True) as page:
+        page.goto(manga_url, wait_until="domcontentloaded", timeout=30_000)
+        page.locator("body").wait_for(state="attached")
+
+        # Some Mangago pages hide older chapters behind a JS button.
+        show_all = page.locator("a[onclick*='showAllChapters']")
+        if show_all.count():
+            try:
+                show_all.first.click(timeout=4_000)
+                page.wait_for_timeout(500)
+            except Exception:
+                pass
+        return _parse_chapters_from_html(page.content(), page.url)
 
 
 class ChapterDownloader:
-    """
-    Handles downloading of manga chapters with threading support.
-    """
-    
-    def __init__(self, max_workers: int = 5, download_dir: str = "downloads"):
+    """Download chapter images with validation and optional lossless PNG conversion."""
+
+    def __init__(
+        self,
+        max_workers: int = 5,
+        download_dir: str = "downloads",
+        image_format: str = "png",
+        keep_originals: bool = True,
+        page_delay: float = 2.0,
+        progress_callback=None,
+    ):
         self.max_workers = max_workers
         self.download_dir = download_dir
+        self.image_format = image_format if image_format in SUPPORTED_IMAGE_MODES else "png"
+        self.keep_originals = keep_originals
+        self.page_delay = max(0.0, float(page_delay))
+        self.progress_callback = progress_callback
         self.session = SessionManager()
-        
+
     def download_chapter(self, manga: Manga, chapter: Chapter) -> DownloadResult:
         if not chapter.image_urls:
             return DownloadResult(chapter=chapter, success=False, error_message="No image URLs found.")
 
         manga_dir = os.path.join(self.download_dir, sanitize_filename(manga.title))
-        create_directory(manga_dir)
-        
         chapter_dir = os.path.join(manga_dir, f"Chapter_{chapter.number}")
         create_directory(chapter_dir)
-        
-        downloaded_count = 0
-        for i, image_url in enumerate(chapter.image_urls, start=1):
-            image_filename = f"{i:03d}.jpg"
-            image_path = os.path.join(chapter_dir, image_filename)
-            if self._download_image(image_url, image_path, chapter.url): # Pass chapter.url as referer
-                downloaded_count += 1
-        
+        originals_dir = os.path.join(chapter_dir, "originais")
+        if self.keep_originals and self.image_format == "png":
+            create_directory(originals_dir)
+
+        downloaded = 0
+        failures: List[str] = []
+        for index, image_url in enumerate(chapter.image_urls, start=1):
+            try:
+                self._download_image(image_url, chapter.url, chapter_dir, originals_dir, index)
+                downloaded += 1
+                if self.progress_callback:
+                    self.progress_callback(chapter, index, len(chapter.image_urls))
+                if self.page_delay > 0 and index < len(chapter.image_urls):
+                    time.sleep(self.page_delay)
+            except Exception as exc:
+                failures.append(f"page {index}: {exc}")
+
+        success = downloaded == len(chapter.image_urls)
         return DownloadResult(
             chapter=chapter,
-            success=True,
+            success=success,
             file_path=chapter_dir,
-            images_downloaded=downloaded_count
+            images_downloaded=downloaded,
+            error_message=None if success else "; ".join(failures[:5]),
         )
-    
+
     def download_chapters(self, manga: Manga, chapters: List[Chapter]) -> List[DownloadResult]:
-        results = []
+        results: List[DownloadResult] = []
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_chapter = {executor.submit(self.download_chapter, manga, chapter): chapter for chapter in chapters}
-            for future in as_completed(future_to_chapter):
+            future_map = {executor.submit(self.download_chapter, manga, ch): ch for ch in chapters}
+            for future in as_completed(future_map):
                 results.append(future.result())
         return results
-    
-    def _download_image(self, image_url: str, image_path: str, chapter_referer: str) -> bool: # Add chapter_referer parameter
-        try:
-            if os.path.exists(image_path):
-                return True
-            # Determine the Referer based on the chapter_referer's domain
-            parsed_chapter_referer = urlparse(chapter_referer)
-            chapter_domain = parsed_chapter_referer.netloc
 
-            if chapter_domain in ["www.youhim.me", "www.mangago.zone", "www.mangago.me"]:
-                # Use requests for these specific domains with hardcoded referer
-                headers = {
-                    "Referer": "https://www.mangago.zone/",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                }
-                response = requests.get(image_url, headers=headers, timeout=30)
-            else:
-                # Fallback to httpx for other domains
-                referer_to_use = chapter_referer # Or parsed_image_url.scheme + "://" + parsed_image_url.netloc + "/"
-                response = self.session.get(image_url, headers={"Referer": referer_to_use}, timeout=20)
-            response.raise_for_status()
-            with open(image_path, 'wb') as f:
-                f.write(response.content)
-            return True
-        except Exception:
-            return False
-    
+    def _download_image(
+        self,
+        image_url: str,
+        chapter_referer: str,
+        chapter_dir: str,
+        originals_dir: str,
+        index: int,
+    ) -> None:
+        headers = {
+            "Referer": f"{urlparse(chapter_referer).scheme}://{urlparse(chapter_referer).netloc}/",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        }
+        response = self.session.get(image_url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+        if not content_type.startswith("image/"):
+            raise DownloadError(f"server returned {content_type or 'non-image content'}")
+
+        raw = response.content
+        try:
+            with Image.open(io.BytesIO(raw)) as probe:
+                probe.verify()
+            with Image.open(io.BytesIO(raw)) as image:
+                detected_format = (image.format or "").upper()
+                width, height = image.size
+                if width <= 0 or height <= 0:
+                    raise DownloadError("invalid image dimensions")
+                image.load()
+                converted = image.copy()
+        except (UnidentifiedImageError, OSError) as exc:
+            raise DownloadError("downloaded content is not a valid image") from exc
+
+        ext_map = {"JPEG": ".jpg", "JPG": ".jpg", "PNG": ".png", "WEBP": ".webp", "GIF": ".gif"}
+        original_ext = ext_map.get(detected_format, ".img")
+        stem = f"page-{index:03d}"
+
+        if self.keep_originals and self.image_format == "png":
+            original_path = os.path.join(originals_dir, stem + original_ext)
+            if not os.path.exists(original_path):
+                Path(original_path).write_bytes(raw)
+
+        if self.image_format == "original":
+            output_path = os.path.join(chapter_dir, stem + original_ext)
+            if not os.path.exists(output_path):
+                Path(output_path).write_bytes(raw)
+            return
+
+        output_path = os.path.join(chapter_dir, stem + ".png")
+        if os.path.exists(output_path):
+            return
+        # PNG is lossless. It cannot restore detail already lost in a source JPEG/WebP.
+        if converted.mode == "P":
+            converted = converted.convert("RGBA")
+        elif converted.mode not in ("RGB", "RGBA", "L", "LA"):
+            converted = converted.convert("RGB")
+        converted.save(output_path, format="PNG", optimize=False)
+
     def close(self):
         self.session.close()
 
 
-def _replace_page_number_manhwa(url: str, page_number: int) -> str:
-    """
-    Replace the page number in a manhwa URL.
-    
-    Args:
-        url (str): The original manhwa URL
-        page_number (int): The new page number
-        
-    Returns:
-        str: The URL with the updated page number
-    """
-    import re
-    # Replace pg-X with pg-page_number
-    return re.sub(r'pg-\d+', f'pg-{page_number}', url)
-
-def extract_chapter_id(url):
-    match = re.search(r"chapter/\d+/(\d+)/", url)
-    if match:
-        return match.group(1)
-    return None
-
-def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
-    """
-    Extract all image URLs from a paginated chapter.
-    Supports various URL formats and uses Selenium for specific domains.
-    """
-    if not chapter_url:
-        raise ParsingError("Chapter URL is invalid.")
-
-    parsed_url = urlparse(chapter_url)
-    domain = parsed_url.netloc
-
-    img_urls = []
-
-    if domain in ["www.youhim.me", "www.mangago.zone"]:
-        driver = None
-        try:
-            driver = init_driver()
-            current_url = chapter_url
-            subpage_idx = 1 # Not strictly needed for img_urls, but good for debugging
-
-            while True:
-                driver.get(current_url)
-
-                # Ensure page ready
-                wait_first_image(driver, timeout=25)
-
-                # Scroll until all lazy images are in DOM
-                imgs = load_all_images_on_subpage(driver, initial_wait=10, pause=1.2, max_rounds=500, stable_rounds=3)
-
-                # Add images from current subpage to list
-                for img in sorted(imgs, key=sort_key_by_page_id):
-                    src = img.get_attribute("src") or img.get_attribute("data-src")
-                    if src:
-                        img_urls.append(src)
-                
-                # Navigate to next subpage (if exists)
-                try:
-                    next_el = driver.find_element(By.CSS_SELECTOR, "a.next_page")
-                    href = next_el.get_attribute("href")
-                    if not href:
-                        href = next_el.get_attribute("href") or next_el.get_attribute("data-href")
-                    if not href:
-                        print("✅ No next link visible. Finished chapter subpages.")
-                        break
-
-                    current_chapter_id = extract_chapter_id(driver.current_url)
-                    next_url = urljoin(driver.current_url, href)
-                    next_chapter_id = extract_chapter_id(next_url)
-
-                    if current_chapter_id and next_chapter_id and current_chapter_id != next_chapter_id:
-                        print(f"🛑 Next page is a new chapter ({next_chapter_id}). Stopping image collection for current chapter.")
-                        break
-
-                    print(f"➡️ Navigating to next subpage: {next_url}")
-                    current_url = next_url # Update current_url for next iteration
-                    subpage_idx += 1
-                    
-                    # Apply 10-sec delay and scroll to bottom, then reset to top
-                    print("Waiting 10 seconds and scrolling to bottom of new page...")
-                    time.sleep(10)
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    driver.execute_script("window.scrollTo(0, 0);")
-
-                except NoSuchElementException:
-                    print("✅ No more next subpages. Finished chapter.")
-                    break
-                except TimeoutException:
-                    print("⚠️ Timeout while moving to next subpage; stopping image collection.")
-                    break
-                except Exception as e:
-                    print(f"❌ An error occurred during subpage navigation: {e}")
-                    break # Break on unexpected errors
-
-            return img_urls
-        finally:
-            if driver:
-                driver.quit()
-    else:
-        # Existing logic for other domains
-        options = webdriver.ChromeOptions()
-        # options.add_argument("--headless=new")
-        options.page_load_strategy = "eager"
-        options.add_argument("--ignore-ssl-errors=true")
-        options.add_argument("--ignore-certificate-errors")
-        
-        driver = webdriver.Chrome(options=options)
-        driver.set_page_load_timeout(10)
-
-        try:
-            driver.get(chapter_url)
-            
-            # Check if this is a vertical longstrip manhwa URL (pattern: /chapter/id1/id2/)
-            is_vertical_longstrip = "/chapter/" in chapter_url and len(chapter_url.split("/")) >= 6
-            
-            if is_vertical_longstrip:
-                # For vertical longstrip manhwa, fetch all images on the single page
-                # Wait 10 seconds for the page to load
-                time.sleep(10)
-                
-                # Scroll all the way to the bottom
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                
-                # Wait a bit more for any remaining images to load
-                time.sleep(2)
-                
-                # Find image elements with specific patterns (e.g., id="page1", class="page1")
-                # Try multiple selectors to catch different patterns
-                selectors = [
-                    "img[id^='page']",
-                    "img[class^='page']",
-                    "img[src*='mangapicgallery.com']"
-                ]
-                
-                found_images = set()  # Use set to avoid duplicates
-                for selector in selectors:
-                    try:
-                        img_elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                        for img in img_elements:
-                            img_url = img.get_attribute("src")
-                            if img_url and img_url not in found_images:
-                                # Filter for actual content images
-                                # Exclude UI elements like keyboard arrows
-                                alt_text = img.get_attribute("alt") or ""
-                                if (img_url.endswith(('.jpg', '.jpeg', '.png', '.webp')) and
-                                    "arrow" not in alt_text.lower() and
-                                    "icon" not in alt_text.lower() and
-                                    "button" not in alt_text.lower()):
-                                    img_urls.append(img_url)
-                                    found_images.add(img_url)
-                    except Exception:
-                        # Continue with next selector if one fails
-                        continue
-            else: # For www.mangago.me (non-vertical longstrip)
-                # Determine the type of pagination
-                is_manhwa = "youhim" in chapter_url or "mangazone" in chapter_url
-                is_manga_mangago = "mangago" in chapter_url
-                
-                # Handling for manhwa URLs (youhim, mangago.zone)
-                if is_manhwa:
-                    # This part remains unchanged, assuming it works as intended.
-                    # If issues arise, they should be addressed separately.
-                    pass
-
-                is_manhwa_uu_url = "/uu/" in chapter_url and "pg-" in chapter_url
-                is_manhwa_mh_url = "/mh/" in chapter_url and "/c" in chapter_url
-
-                if is_manhwa_uu_url or is_manhwa_mh_url:
-                    page_num = 1
-                    base_url = chapter_url
-
-                    # Determine the base URL and starting page number
-                    if is_manhwa_uu_url:
-                        match = re.search(r"(.*/pg-)\d+", chapter_url)
-                        if match:
-                            base_url = match.group(1)
-                        pg_match = re.search(r"pg-(\d+)", chapter_url)
-                        if pg_match:
-                            page_num = int(pg_match.group(1))
-                    elif is_manhwa_mh_url:
-                        # For /mh/ URLs, the base is up to the chapter
-                        match = re.search(r"(.*/c\d+/)", chapter_url)
-                        if match:
-                            base_url = match.group(1)
-                        pg_match = re.search(r"/c\d+/(\d+)", chapter_url)
-                        if pg_match:
-                            page_num = int(pg_match.group(1))
-
-                    while True:
-                        current_url = ""
-                        # Construct the URL for the current page
-                        if is_manhwa_uu_url:
-                            current_url = f"{base_url}{page_num}/"
-                        elif is_manhwa_mh_url:
-                            if page_num == 1 and not re.search(r"/c\d+/\d+", base_url):
-                                 current_url = base_url
-                            else:
-                                 current_url = f"{base_url}{page_num}/"
-
-                        if not current_url:
-                            break
-
-                        try:
-                            if driver.current_url != current_url:
-                                driver.get(current_url)
-
-                            img_selector = f"img#page{page_num}, img.page{page_num}"
-                            img = WebDriverWait(driver, 10).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, img_selector))
-                            )
-                            img_url = img.get_attribute("src")
-                            if img_url:
-                                img_urls.append(img_url)
-
-                            page_num += 1
-
-                        except TimeoutException:
-                            break
-                        except Exception as e:
-                            break
-                else:
-                    # Original logic for other regular manga/manhwa (non-mh/uu/cXXX)
-                    # This implies it uses .multi_pg_tip.left for total_pages
-                    # and appends /i/
-                    try:
-                        page_info_element = WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, ".multi_pg_tip.left"))
-                        )
-                        page_info = page_info_element.text
-                        total_pages = int(page_info.split("/")[-1].replace(")", ""))
-                    except Exception as e:
-                        # Fallback if pages can't be fetched
-                        total_pages = 1
-
-                    for i in range(1, total_pages + 1):
-                        url = chapter_url if i == 1 else f"{chapter_url.rstrip('/')}/{i}/"
-                        if driver.current_url != url:
-                            driver.get(url)
-
-                        try:
-                            img = WebDriverWait(driver, 10).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, f"img#page{i}"))
-                            )
-                            img_url = img.get_attribute("src")
-                            if img_url:
-                                img_urls.append(img_url)
-                        except Exception:
-                            continue
-            
-            return img_urls
-        finally:
-            driver.quit()
-
-
-def get_chapter_list(driver: webdriver.Chrome) -> List[Chapter]:
-    """
-    Get the list of chapters for a given manga from an existing driver instance.
-    Automatically clicks 'show all chapters' button if present.
-    Handles different domains.
-    """
-    parsed_url = urlparse(driver.current_url)
-    domain = parsed_url.netloc
-    
-    chapters = []
-    
-    if domain in ["www.youhim.me", "www.mangago.zone"]:
-        # For these domains, assume a simpler structure for chapter links.
-        # This is a generic approach; might need refinement based on actual HTML.
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        
-        # Look for common chapter link patterns
-        # Example: <a> tags within a div or ul that might contain "chapter" in their href
-        chapter_links = soup.find_all('a', href=re.compile(r'/chapter/\d+/\d+/'))
-        
-        for link in chapter_links:
-            title = link.get_text(strip=True)
-            url = link.get('href')
-
-            if url and not url.startswith('http'):
-                url = urljoin(driver.current_url, url)
-
-            # Try to extract chapter number from title or URL
-            number = 0
-            match_title = re.search(r'Chapter\s*(\d+(\.\d+)?)', title, re.IGNORECASE)
-            match_url = re.search(r'/chapter/\d+/(\d+)/', url)
-
-            if match_title:
-                number = float(match_title.group(1))
-            elif match_url:
-                number = float(match_url.group(1))
-            
-            if url and title:
-                chapters.append(Chapter(number=int(number), title=title, url=url))
-        
-    else:
-        # Existing logic for other domains (e.g., mangago.me)
-        try:
-            # Look for the "show all chapters" button
-            show_all_button = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//a[contains(@onclick, 'showAllChapters()')]"))
-            )
-            # Click the button to show all chapters
-            show_all_button.click()
-            # Wait a bit for the page to update
-            time.sleep(2)
-        except TimeoutException:
-            # No "show all chapters" button found, proceed with existing chapters
-            pass
-        except Exception as e:
-            # Some other error occurred, but we'll continue anyway
-            pass
-        
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        chapter_table = soup.find('table', class_='listing')
-        if not isinstance(chapter_table, Tag):
-            raise DownloadError("Could not find chapter table.")
-        
-        for row in chapter_table.find_all('tr'):
-            link = row.find('a', class_='chico')
-            if not link:
-                continue
-
-            title = link.get_text(strip=True)
-            url = link.get('href')
-
-            if url and not url.startswith('http'):
-                url = urljoin(driver.current_url, url)
-
-            match = re.search(r'Ch\.(\d+(\.\d+)?)', title)
-            number = float(match.group(1)) if match else 0
-            
-            chapters.append(Chapter(number=int(number), title=title, url=url))
-    
-    return sorted(chapters, key=lambda ch: ch.number)
-
-
-def close_driver(driver: webdriver.Chrome):
-    """Safely closes the WebDriver."""
-    if driver:
-        try:
-            driver.quit()
-        except Exception:
-            pass
-
+# Compatibility names retained so existing CLI/GUI imports keep working.
 def init_driver():
-    options = webdriver.ChromeOptions()
-    options.add_argument("--non-headless=new")
-    options.page_load_strategy = "eager"
-    options.add_argument("--log-level=3")
-    options.add_experimental_option("excludeSwitches", ["enable-logging"])
-    # Make viewport tall-ish so fewer scrolls are needed
-    driver = webdriver.Chrome(options=options)
-    driver.set_window_size(1280, 2200)
-    return driver
+    raise RuntimeError("Selenium/ChromeDriver was removed. Browser automation now uses Playwright internally.")
 
-def wait_first_image(driver, timeout=20):
-    WebDriverWait(driver, timeout).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "img[id^='page']"))
-    )
 
-def load_all_images_on_subpage(driver, initial_wait=10, pause=1.0, max_rounds=400, stable_rounds=3):
-    """
-    Scrolls in steps until the number of images stops increasing for `stable_rounds`.
-    This reliably triggers lazy-loading on long vertical strips.
-    """
-    # start at top
-    driver.execute_script("window.scrollTo(0, 0);")
-    # give scripts time to inject all <img> tags
-    time.sleep(initial_wait)
-
-    prev_count = 0
-    stable = 0
-
-    for _ in range(max_rounds):
-        # Current images
-        imgs = driver.find_elements(By.CSS_SELECTOR, "img[id^='page']")
-        count = len(imgs)
-
-        # If new images appeared, reset stability
-        if count > prev_count:
-            stable = 0
-            prev_count = count
-        else:
-            stable += 1
-
-        # Scroll: bring the last image fully into view; then advance by a viewport
-        if imgs:
-            try:
-                driver.execute_script("arguments[0].scrollIntoView({block: 'end'});", imgs[-1])
-            except Exception:
-                pass
-
-        driver.execute_script("""
-            const step = Math.max(window.innerHeight, 900);
-            window.scrollBy(0, step);
-        """)
-
-        time.sleep(pause)
-
-        # If we've seen no growth for a while, try one hard jump to bottom once
-        if stable == stable_rounds - 1:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(pause)
-
-        if stable >= stable_rounds:
-            break
-
-    # Final collect
-    imgs = driver.find_elements(By.CSS_SELECTOR, "img[id^='page']")
-    return imgs
-
-def sort_key_by_page_id(img_el):
-    # Extract number from id="page123"
-    try:
-        pid = img_el.get_attribute("id") or ""
-        match = re.search(r"page(\d+)", pid)
-        if match:
-            n = int(match.group(1))
-            return n
-        else:
-            return 1_000_000 # fallback to push unknowns to end
-    except Exception:
-        return 1_000_000  # fallback to push unknowns to end
+def close_driver(_driver):
+    return None
