@@ -40,3 +40,141 @@ let saveTimer; function queueSave(){ $('#saveState').textContent='Salvando…';c
 ['downloadLocation','maxWorkers','pageDelay','retryCount','timeout','imageFormat','keepOriginals'].forEach(id=>$('#'+id).addEventListener('change',queueSave));$('#downloadLocation').addEventListener('input',queueSave);$$('#formatSegment button').forEach(b=>b.addEventListener('click',()=>{$$('#formatSegment button').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');queueSave();}));
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}function escAttr(v){return esc(v);}function fmt(v){const n=Number(v);return Number.isInteger(n)?n.toFixed(1):String(n);}
 refreshDownloads();
+
+
+/* CHAPTER_TYPE_FILTER_V1
+   Adds a chapter-version filter to Web V2.
+   Classification:
+     Official = title contains "official" (case-insensitive)
+     Regular  = every other chapter entry.
+   Selection helpers operate only on currently visible rows.
+*/
+(() => {
+  "use strict";
+
+  const normalize = value => (value || "").toString().trim().toLowerCase();
+
+  function classifyRow(row) {
+    const cells = row.querySelectorAll("td");
+    const title = cells.length ? cells[cells.length - 1].textContent : row.textContent;
+    return normalize(title).includes("official") ? "official" : "regular";
+  }
+
+  function chapterRows() {
+    return [...document.querySelectorAll("table tbody tr")].filter(row => row.querySelector('input[type="checkbox"]'));
+  }
+
+  function currentFilter() {
+    return document.querySelector(".chapter-version-filter [data-version].is-active")?.dataset.version || "all";
+  }
+
+  function applyFilter() {
+    const mode = currentFilter();
+    chapterRows().forEach(row => {
+      const type = classifyRow(row);
+      row.dataset.chapterVersion = type;
+      row.hidden = mode !== "all" && type !== mode;
+    });
+    updateVisibleCount();
+  }
+
+  function updateVisibleCount() {
+    const host = document.querySelector(".chapter-version-filter");
+    if (!host) return;
+    const visible = chapterRows().filter(row => !row.hidden);
+    const official = visible.filter(row => classifyRow(row) === "official").length;
+    const regular = visible.length - official;
+    const info = host.querySelector(".chapter-version-count");
+    if (info) info.textContent = `${visible.length} exibidos`;
+    host.dataset.officialVisible = official;
+    host.dataset.regularVisible = regular;
+  }
+
+  function setFilter(mode) {
+    document.querySelectorAll(".chapter-version-filter [data-version]").forEach(btn => {
+      const active = btn.dataset.version === mode;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    applyFilter();
+  }
+
+  function addFilter() {
+    if (document.querySelector(".chapter-version-filter")) return true;
+
+    const rows = chapterRows();
+    if (!rows.length) return false;
+
+    const chapterHeading = [...document.querySelectorAll("h1,h2,h3")].find(
+      el => normalize(el.textContent).includes("capítulos") || normalize(el.textContent).includes("chapters")
+    );
+    const table = rows[0].closest("table");
+    const anchor = chapterHeading?.parentElement || table?.parentElement;
+    if (!anchor) return false;
+
+    const bar = document.createElement("div");
+    bar.className = "chapter-version-filter";
+    bar.innerHTML = `
+      <div class="chapter-version-filter__label">
+        <span>Versão</span>
+        <small class="chapter-version-count"></small>
+      </div>
+      <div class="chapter-version-filter__segments" role="group" aria-label="Filtrar versão do capítulo">
+        <button type="button" data-version="all" class="is-active" aria-pressed="true">Todos</button>
+        <button type="button" data-version="official" aria-pressed="false">Official</button>
+        <button type="button" data-version="regular" aria-pressed="false">Regular</button>
+      </div>
+    `;
+
+    if (chapterHeading && chapterHeading.nextSibling) {
+      chapterHeading.parentElement.insertBefore(bar, chapterHeading.nextSibling);
+    } else if (table) {
+      table.parentElement.insertBefore(bar, table);
+    }
+
+    bar.addEventListener("click", event => {
+      const button = event.target.closest("[data-version]");
+      if (button) setFilter(button.dataset.version);
+    });
+
+    // Make bulk-selection controls respect the active filter.
+    document.addEventListener("click", event => {
+      const button = event.target.closest("button");
+      if (!button || !document.querySelector(".chapter-version-filter")) return;
+      const label = normalize(button.textContent);
+
+      if (["todos", "select all"].includes(label)) {
+        setTimeout(() => {
+          chapterRows().filter(row => row.hidden).forEach(row => {
+            const cb = row.querySelector('input[type="checkbox"]');
+            if (cb?.checked) {
+              cb.checked = false;
+              cb.dispatchEvent(new Event("change", {bubbles: true}));
+            }
+          });
+        }, 0);
+      }
+    }, true);
+
+    applyFilter();
+    return true;
+  }
+
+  const observer = new MutationObserver(() => {
+    if (!document.querySelector(".chapter-version-filter")) addFilter();
+    else applyFilter();
+  });
+
+  function boot() {
+    addFilter();
+    observer.observe(document.body, {childList: true, subtree: true});
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot, {once: true});
+  } else {
+    boot();
+  }
+
+  window.MangagoChapterTypeFilter = { classifyRow, applyFilter, setFilter };
+})();

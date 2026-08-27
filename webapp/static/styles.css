@@ -24,3 +24,67 @@ button,input,select{font:inherit}.app-shell{min-height:100vh;display:grid;grid-t
 .settings-heading{display:flex;justify-content:space-between;align-items:flex-end}.saved-badge{color:var(--success);font-size:11px;font-weight:700}.settings-card{border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:0 18px;margin-bottom:14px;box-shadow:var(--shadow)}.settings-card-head{padding:16px 0 12px;border-bottom:1px solid var(--border)}.settings-card-head h2{margin:0;font-size:16px}.settings-card-head p{margin:4px 0 0;color:var(--text-3);font-size:10px}.setting-row{display:grid;grid-template-columns:minmax(280px,1fr) minmax(220px,360px);align-items:center;gap:24px;min-height:66px;border-bottom:1px solid var(--border)}.setting-row:last-child{border-bottom:0}.setting-row strong{display:block;font-size:12px}.setting-row small{display:block;margin-top:3px;color:var(--text-3);font-size:10px;line-height:1.35}.setting-control{height:38px;padding:0 11px;width:100%}.number-control{width:110px;height:38px;padding:0 11px;justify-self:end}.unit-input{height:38px;width:110px;display:flex;align-items:center;justify-self:end;overflow:hidden}.unit-input input{min-width:0;width:100%;height:36px;background:transparent;border:0;color:var(--text);padding:0 0 0 11px;outline:0}.unit-input span{padding-right:10px;color:var(--text-3);font-size:11px}.switch{justify-self:end;position:relative;width:38px;height:22px}.switch input{display:none}.switch span{position:absolute;inset:0;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;cursor:pointer}.switch span:before{content:"";position:absolute;width:16px;height:16px;left:2px;top:2px;border-radius:50%;background:var(--text-3);transition:.15s}.switch input:checked+span{background:var(--primary);border-color:var(--primary)}.switch input:checked+span:before{transform:translateX(16px);background:white}
 .toast{position:fixed;right:20px;bottom:20px;max-width:380px;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:var(--shadow);font-size:12px;opacity:0;pointer-events:none;transform:translateY(8px);transition:.2s}.toast.show{opacity:1;transform:translateY(0)}
 @media(max-width:850px){.app-shell{grid-template-columns:68px minmax(0,1fr)}.brand small,.nav-item{font-size:0}.nav-item span{font-size:14px;width:auto}.nav-item{text-align:center}.nav-label{display:none}.setting-row{grid-template-columns:1fr}.setting-row>*:last-child{justify-self:stretch}.number-control,.unit-input{width:100%}.manga-hero{grid-template-columns:72px minmax(0,1fr)}.count-card{display:none}.cover-shell{width:72px;height:98px}.chapter-toolbar{grid-template-columns:1fr}.sidebar-footer{display:none}}
+
+
+/* CHAPTER_TYPE_FILTER_V1 */
+.chapter-version-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #d8dce6);
+  border-radius: 12px;
+  background: var(--surface, rgba(255,255,255,.55));
+}
+.chapter-version-filter__label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 700;
+}
+.chapter-version-filter__label small {
+  font-weight: 500;
+  opacity: .65;
+}
+.chapter-version-filter__segments {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border, #d8dce6);
+  border-radius: 10px;
+}
+.chapter-version-filter__segments button {
+  min-width: 88px;
+  padding: 8px 14px;
+  border: 0;
+  border-right: 1px solid var(--border, #d8dce6);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.chapter-version-filter__segments button:last-child {
+  border-right: 0;
+}
+.chapter-version-filter__segments button.is-active {
+  background: var(--accent, #806cf5);
+  color: white;
+}
+table tbody tr[hidden] {
+  display: none !important;
+}
+@media (max-width: 760px) {
+  .chapter-version-filter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .chapter-version-filter__segments {
+    width: 100%;
+  }
+  .chapter-version-filter__segments button {
+    flex: 1;
+    min-width: 0;
+  }
+}
