@@ -215,5 +215,8 @@ __marimo__/
 # Local patch backups
 patch_backups/
 
+# Local user preferences
+gui_config.json
+
 # Generated output
 output/

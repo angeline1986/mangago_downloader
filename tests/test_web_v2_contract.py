@@ -14,6 +14,7 @@ if 'img2pdf' not in sys.modules:
 
 from src.converter import _get_image_files
 from src.models import Manga, SearchResult, Chapter, DownloadResult
+from gui.config import ConfigManager
 from webapp import server
 
 
@@ -107,8 +108,11 @@ class WebV2ContractTests(unittest.TestCase):
         self.assertEqual(ordered, ['page-001.png', 'page-002.png', 'page-010.png'])
 
     def test_default_page_delay_remains_two_seconds(self):
-        self.assertEqual(float(server._config.get('page_delay', 2.0)), 2.0)
-        self.assertFalse(server._config.get('auto_generate_pdf', False))
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = ConfigManager(config_file=str(Path(tmp) / 'gui_config.json'))
+            defaults = manager.default_config
+        self.assertEqual(float(defaults.get('page_delay', 2.0)), 2.0)
+        self.assertFalse(defaults.get('auto_generate_pdf', False))
 
     def test_pdf_endpoint_generates_pdf_for_completed_chapter(self):
         with tempfile.TemporaryDirectory() as tmp:
