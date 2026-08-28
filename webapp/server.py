@@ -5,6 +5,7 @@ The server binds exclusively to 127.0.0.1 and reuses the existing Python core.
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import os
 import threading
@@ -18,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 from gui.config import ConfigManager
 from src.converter import convert_to_cbz, convert_to_pdf
-from src.downloader import ChapterDownloader, fetch_chapter_image_urls, get_chapter_list
+from src.downloader import ChapterDownloader, discover_chapter_reader_pages_with_cookies, get_chapter_list
 from src.models import Chapter, Manga
 from src.search import get_manga_details, search_manga
 
@@ -30,6 +31,18 @@ _config = ConfigManager()
 _jobs: Dict[str, Dict[str, Any]] = {}
 _jobs_lock = threading.RLock()
 
+web_logger = logging.getLogger("mangago.web")
+
+
+
+def _configure_logging() -> None:
+    level_name = os.environ.get("MANGAGO_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
 def _manga_dict(manga: Manga) -> Dict[str, Any]:
     return {
@@ -74,11 +87,19 @@ def _update_chapter_row(job_id: str, chapter_url: str, **values: Any) -> None:
                 return
 
 
-def _progress_percent(completed: int, total: int, page_current: int = 0, page_total: int = 0) -> int:
-    if total <= 0:
-        return 0
-    partial = (page_current / page_total) if page_total else 0.0
-    return max(0, min(100, round(((completed + partial) / total) * 100)))
+def _refresh_job_progress(job_id: str) -> None:
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            return
+        rows = job.get("chapters", [])
+        total = len(rows)
+        if not total:
+            job["progress"] = 0
+            job["active_count"] = 0
+            return
+        job["progress"] = max(0, min(100, round(sum(float(r.get("progress", 0)) for r in rows) / total)))
+        job["active_count"] = sum(1 for r in rows if r.get("status") in {"downloading", "converting"})
 
 
 def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: Dict[str, Any]) -> None:
@@ -86,66 +107,86 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
     completed = 0
     failed = 0
     try:
-        _update_job(job_id, state="running", phase="preparing", message="Preparando download…")
+        workers = max(1, min(3, int(settings.get("max_workers", 3))))
+        _update_job(job_id, state="running", phase="preparing", message="Preparando capítulos…", active_count=0)
         downloader = ChapterDownloader(
-            max_workers=max(1, int(settings.get("max_workers", 3))),
+            max_workers=workers,
             download_dir=settings.get("download_location") or str(Path.home() / "Downloads" / "mangago"),
-            image_format=settings.get("image_format", "png"),
-            keep_originals=bool(settings.get("keep_originals", True)),
+            image_format=settings.get("image_format", "original"),
+            keep_originals=bool(settings.get("keep_originals", False)),
             page_delay=float(settings.get("page_delay", 2.0)),
+            retry_count=int(settings.get("retry_count", 3)),
+            timeout=int(settings.get("timeout", 30)),
         )
-        total = len(chapters)
 
+        # Keep Playwright discovery sequential. This avoids opening several browsers at once.
+        valid_chapters: List[Chapter] = []
         for chapter in chapters:
-            _update_job(job_id, phase="locating", current_chapter=chapter.number, current_page=0, total_pages=0,
-                        message=f"Localizando páginas do capítulo {chapter.number:g}…")
-            _update_chapter_row(job_id, chapter.url, status="locating", message="Localizando páginas")
+            _update_job(job_id, phase="locating", message=f"Localizando páginas do capítulo {chapter.number:g}…")
+            _update_chapter_row(job_id, chapter.url, status="locating", message="Localizando páginas", progress=0)
             try:
-                chapter.image_urls = fetch_chapter_image_urls(chapter.url)
+                web_logger.info(
+                    "[JOB %s] discovery Ch.%s iniciado | url=%s | workers=%s | timeout=%ss",
+                    job_id[:8], chapter.number, chapter.url, workers, int(settings.get("timeout", 30)),
+                )
+                page_urls, cookie_header = discover_chapter_reader_pages_with_cookies(
+                    chapter.url,
+                    timeout=int(settings.get("timeout", 30)),
+                )
+                chapter.image_urls = page_urls
+                setattr(chapter, "reader_cookie_header", cookie_header)
+                web_logger.info(
+                    "[JOB %s] discovery Ch.%s concluído | páginas=%s",
+                    job_id[:8], chapter.number, len(chapter.image_urls),
+                )
+                valid_chapters.append(chapter)
+                _update_chapter_row(job_id, chapter.url, status="queued", message=f"{len(chapter.image_urls)} páginas encontradas", total_pages=len(chapter.image_urls))
             except Exception as exc:
+                web_logger.exception("[JOB %s] discovery Ch.%s falhou: %s", job_id[:8], chapter.number, exc)
                 failed += 1
                 completed += 1
-                _update_chapter_row(job_id, chapter.url, status="failed", message=str(exc), progress=0)
-                _update_job(job_id, completed=completed, failed=failed, progress=_progress_percent(completed, total),
-                            message=f"Falha ao localizar capítulo {chapter.number:g}")
-                continue
+                _update_chapter_row(job_id, chapter.url, status="failed", message=str(exc), progress=100)
+                _update_job(job_id, completed=completed, failed=failed)
+                _refresh_job_progress(job_id)
 
-            page_total = len(chapter.image_urls)
-            _update_chapter_row(job_id, chapter.url, status="downloading", total_pages=page_total, progress=0)
+        if valid_chapters:
+            _update_job(job_id, phase="downloading", message=f"Baixando páginas com até {workers} downloads simultâneos…")
 
-            def on_page(_chapter: Chapter, current: int, total_pages: int) -> None:
-                _update_job(job_id, phase="downloading", current_chapter=chapter.number, current_page=current,
-                            total_pages=total_pages, progress=_progress_percent(completed, total, current, total_pages),
-                            message=f"Capítulo {chapter.number:g}: página {current}/{total_pages}")
+            def on_page(chapter: Chapter, current: int, total_pages: int) -> None:
+                pct = round((current / total_pages) * 100) if total_pages else 0
                 _update_chapter_row(job_id, chapter.url, status="downloading", current_page=current,
-                                    total_pages=total_pages, progress=round((current / total_pages) * 100) if total_pages else 0,
-                                    message=f"{current}/{total_pages} páginas")
+                                    total_pages=total_pages, progress=pct, message=f"{current}/{total_pages} páginas")
+                _refresh_job_progress(job_id)
 
             downloader.progress_callback = on_page
-            result = downloader.download_chapter(manga, chapter)
 
-            if result.success:
-                format_type = str(settings.get("format", "images")).lower()
-                if format_type in {"pdf", "cbz"} and result.file_path:
-                    _update_job(job_id, phase="converting", message=f"Convertendo capítulo {chapter.number:g} para {format_type.upper()}…")
-                    if format_type == "pdf":
-                        convert_to_pdf(result.file_path, delete_images=bool(settings.get("delete_images", False)))
-                    else:
-                        convert_to_cbz(result.file_path, delete_images=bool(settings.get("delete_images", False)))
-                _update_chapter_row(job_id, chapter.url, status="completed", progress=100, message="Concluído")
-            else:
-                failed += 1
-                _update_chapter_row(job_id, chapter.url, status="failed", message=result.error_message or "Falha no download")
+            def on_result(result) -> None:
+                nonlocal completed, failed
+                chapter = result.chapter
+                if result.success:
+                    format_type = str(settings.get("format", "images")).lower()
+                    if format_type in {"pdf", "cbz"} and result.file_path:
+                        _update_chapter_row(job_id, chapter.url, status="converting", message=f"Gerando {format_type.upper()}…", progress=100)
+                        _refresh_job_progress(job_id)
+                        if format_type == "pdf":
+                            convert_to_pdf(result.file_path, delete_images=bool(settings.get("delete_images", False)))
+                        else:
+                            convert_to_cbz(result.file_path, delete_images=bool(settings.get("delete_images", False)))
+                    _update_chapter_row(job_id, chapter.url, status="completed", progress=100, message="Concluído")
+                else:
+                    failed += 1
+                    _update_chapter_row(job_id, chapter.url, status="failed", progress=100, message=result.error_message or "Falha no download")
+                completed += 1
+                _update_job(job_id, completed=completed, failed=failed)
+                _refresh_job_progress(job_id)
 
-            completed += 1
-            _update_job(job_id, completed=completed, failed=failed, current_page=0, total_pages=0,
-                        progress=_progress_percent(completed, total))
+            downloader.download_chapters(manga, valid_chapters, result_callback=on_result)
 
         state = "completed" if failed == 0 else "completed_with_errors"
         message = "Download concluído" if failed == 0 else f"Concluído com {failed} falha(s)"
-        _update_job(job_id, state=state, phase="done", progress=100, message=message, finished_at=time.time())
+        _update_job(job_id, state=state, phase="done", progress=100, active_count=0, message=message, finished_at=time.time())
     except Exception as exc:
-        _update_job(job_id, state="failed", phase="error", message=str(exc), finished_at=time.time())
+        _update_job(job_id, state="failed", phase="error", active_count=0, message=str(exc), finished_at=time.time())
     finally:
         if downloader:
             downloader.close()
@@ -274,8 +315,8 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
             with _jobs_lock:
                 _jobs[job_id] = {
                     "id": job_id, "state": "queued", "phase": "queued", "message": "Na fila", "manga": _manga_dict(manga),
-                    "total": len(chapters), "completed": 0, "failed": 0, "progress": 0, "current_chapter": None,
-                    "current_page": 0, "total_pages": 0, "created_at": time.time(), "finished_at": None, "chapters": rows,
+                    "total": len(chapters), "completed": 0, "failed": 0, "progress": 0, "active_count": 0,
+                    "created_at": time.time(), "finished_at": None, "chapters": rows,
                 }
             threading.Thread(target=_run_download, args=(job_id, manga, chapters, settings), daemon=True).start()
             self._json({"job_id": job_id}, 202)
@@ -296,7 +337,7 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                 current[key] = value
         try:
             current["page_delay"] = max(0.0, float(current.get("page_delay", 2.0)))
-            current["max_workers"] = max(1, int(current.get("max_workers", 3)))
+            current["max_workers"] = max(1, min(3, int(current.get("max_workers", 3))))
             current["retry_count"] = max(0, int(current.get("retry_count", 3)))
             current["timeout"] = max(1, int(current.get("timeout", 30)))
         except (TypeError, ValueError):

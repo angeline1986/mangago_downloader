@@ -124,21 +124,26 @@ class DownloadWorker(QThread):
             self.downloader = ChapterDownloader(
                 max_workers=self.max_workers,
                 download_dir=download_dir,
-                image_format=self.download_config.get("image_format", "png"),
-                keep_originals=self.download_config.get("keep_originals", True),
+                image_format=self.download_config.get("image_format", "original"),
+                keep_originals=self.download_config.get("keep_originals", False),
                 page_delay=self.download_config.get("page_delay", 2.0),
+                retry_count=self.download_config.get("retry_count", 3),
+                timeout=self.download_config.get("timeout", 30),
                 progress_callback=lambda chapter, current, total: self.page_progress.emit(chapter, current, total),
             )
-            
-            for i, chapter in enumerate(self.chapters):
-                self.status_updated.emit(f"Downloading Chapter {chapter.number}...")
-                try:
-                    result = self.downloader.download_chapter(self.manga, chapter)
+
+            completed = 0
+            def on_result(result):
+                nonlocal completed
+                completed += 1
+                if result.success:
                     self.download_completed.emit(result)
-                except Exception as e:
-                    self.download_failed.emit(chapter, str(e))
-                
-                self.progress_updated.emit(i + 1)
+                else:
+                    self.download_failed.emit(result.chapter, result.error_message or "Download failed")
+                self.progress_updated.emit(completed)
+
+            self.status_updated.emit(f"Downloading up to {self.max_workers} chapters simultaneously...")
+            self.downloader.download_chapters(self.manga, self.chapters, result_callback=on_result)
             
         except Exception as e:
             self.status_updated.emit(f"Download failed: {str(e)}")

@@ -25,66 +25,12 @@ button,input,select{font:inherit}.app-shell{min-height:100vh;display:grid;grid-t
 .toast{position:fixed;right:20px;bottom:20px;max-width:380px;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:var(--shadow);font-size:12px;opacity:0;pointer-events:none;transform:translateY(8px);transition:.2s}.toast.show{opacity:1;transform:translateY(0)}
 @media(max-width:850px){.app-shell{grid-template-columns:68px minmax(0,1fr)}.brand small,.nav-item{font-size:0}.nav-item span{font-size:14px;width:auto}.nav-item{text-align:center}.nav-label{display:none}.setting-row{grid-template-columns:1fr}.setting-row>*:last-child{justify-self:stretch}.number-control,.unit-input{width:100%}.manga-hero{grid-template-columns:72px minmax(0,1fr)}.count-card{display:none}.cover-shell{width:72px;height:98px}.chapter-toolbar{grid-template-columns:1fr}.sidebar-footer{display:none}}
 
-
-/* CHAPTER_TYPE_FILTER_V1 */
-.chapter-version-filter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 10px 0 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border, #d8dce6);
-  border-radius: 12px;
-  background: var(--surface, rgba(255,255,255,.55));
-}
-.chapter-version-filter__label {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-weight: 700;
-}
-.chapter-version-filter__label small {
-  font-weight: 500;
-  opacity: .65;
-}
-.chapter-version-filter__segments {
-  display: inline-flex;
-  overflow: hidden;
-  border: 1px solid var(--border, #d8dce6);
-  border-radius: 10px;
-}
-.chapter-version-filter__segments button {
-  min-width: 88px;
-  padding: 8px 14px;
-  border: 0;
-  border-right: 1px solid var(--border, #d8dce6);
-  border-radius: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-}
-.chapter-version-filter__segments button:last-child {
-  border-right: 0;
-}
-.chapter-version-filter__segments button.is-active {
-  background: var(--accent, #806cf5);
-  color: white;
-}
-table tbody tr[hidden] {
-  display: none !important;
-}
-@media (max-width: 760px) {
-  .chapter-version-filter {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .chapter-version-filter__segments {
-    width: 100%;
-  }
-  .chapter-version-filter__segments button {
-    flex: 1;
-    min-width: 0;
-  }
-}
+/* DOWNLOAD_ENGINE_V2 */
+.chapter-toolbar{flex-wrap:wrap}
+.chapter-type-filter{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.segmented.compact button{padding:7px 11px;min-width:auto}
+.setting-row.setting-disabled{opacity:.52}
+.setting-row.setting-disabled .switch{cursor:not-allowed}
+.setting-row.setting-disabled input{pointer-events:none}
+.queue-status.converting{opacity:.85}
+@media(max-width:900px){.chapter-type-filter{width:100%;flex-wrap:wrap}}

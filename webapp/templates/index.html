@@ -95,6 +95,15 @@
 
         <div class="chapter-toolbar">
           <input id="chapterFilter" type="text" placeholder="Buscar capítulo…" />
+          <div class="chapter-type-filter">
+            <span>Versão</span>
+            <div class="segmented compact" id="chapterTypeSegment">
+              <button data-value="all" class="selected">Todos</button>
+              <button data-value="official">Official</button>
+              <button data-value="regular">Regular</button>
+            </div>
+            <small class="muted" id="visibleChapterCount">0 exibidos</small>
+          </div>
           <div class="range-box">
             <span>Intervalo</span>
             <input id="rangeStart" type="number" min="1" value="1" />
@@ -113,7 +122,7 @@
         <div class="sticky-actions">
           <span class="muted" id="downloadSummary">Selecione capítulos para baixar.</span>
           <div>
-            <button class="secondary" id="downloadAll">Baixar todos</button>
+            <button class="secondary" id="downloadAll">Baixar exibidos</button>
             <button class="primary" id="downloadSelected" disabled>Baixar selecionados</button>
           </div>
         </div>
@@ -151,19 +160,19 @@
             </div>
           </div>
           <div class="setting-row">
-            <div><strong>Formato das imagens</strong><small>PNG evita nova compressão com perdas; Original preserva o formato recebido.</small></div>
-            <select class="setting-control" id="imageFormat"><option value="png">PNG — sem perda adicional</option><option value="original">Original</option></select>
+            <div><strong>Formato das imagens</strong><small>Original preserva exatamente o arquivo recebido, sem conversão ou recompressão.</small></div>
+            <select class="setting-control" id="imageFormat"><option value="original">Original — sem perda de qualidade</option><option value="png">PNG — conversão sem nova perda</option></select>
           </div>
-          <div class="setting-row">
-            <div><strong>Manter arquivo original</strong><small>Salva também a imagem recebida do servidor na pasta /originais.</small></div>
+          <div class="setting-row" id="keepOriginalsRow">
+            <div><strong>Manter arquivo original</strong><small>Disponível ao converter para PNG; salva também os bytes recebidos na pasta /originais.</small></div>
             <label class="switch"><input id="keepOriginals" type="checkbox" /><span></span></label>
           </div>
         </div>
 
         <div class="settings-card">
           <div class="settings-card-head"><h2>Desempenho</h2><p>Controle o ritmo das consultas e como o aplicativo reage a falhas.</p></div>
-          <div class="setting-row"><div><strong>Downloads simultâneos</strong><small>Quantidade máxima configurada para processamento.</small></div><input class="number-control" id="maxWorkers" type="number" min="1" max="10" /></div>
-          <div class="setting-row"><div><strong>Intervalo entre páginas</strong><small>Pausa antes de consultar a próxima página. Padrão: 2,0 segundos.</small></div><div class="unit-input"><input id="pageDelay" type="number" min="0" max="30" step="0.5" /><span>s</span></div></div>
+          <div class="setting-row"><div><strong>Páginas simultâneas</strong><small>Quantidade máxima de páginas processadas em paralelo dentro do capítulo. Limite inicial: 3.</small></div><input class="number-control" id="maxWorkers" type="number" min="1" max="3" /></div>
+          <div class="setting-row"><div><strong>Intervalo mínimo entre requisições</strong><small>Rate limit global entre downloads de imagens, mesmo com vários capítulos ativos. Padrão: 2,0 segundos.</small></div><div class="unit-input"><input id="pageDelay" type="number" min="0" max="30" step="0.5" /><span>s</span></div></div>
           <div class="setting-row"><div><strong>Tentativas em caso de falha</strong><small>Número de novas tentativas quando uma página ou imagem não responde.</small></div><input class="number-control" id="retryCount" type="number" min="0" max="20" /></div>
           <div class="setting-row"><div><strong>Timeout</strong><small>Tempo máximo de espera por uma operação antes de tratá-la como falha.</small></div><div class="unit-input"><input id="timeout" type="number" min="1" max="300" /><span>s</span></div></div>
         </div>

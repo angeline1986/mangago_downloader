@@ -1,12 +1,12 @@
 {
   "download_location": "",
-  "max_workers": 3,
+  "max_workers": 1,
   "retry_count": 3,
   "timeout": 30,
   "page_delay": 2.0,
   "overwrite_existing": false,
   "format": "images",
   "delete_images": false,
-  "image_format": "png",
-  "keep_originals": true
+  "image_format": "original",
+  "keep_originals": false
 }

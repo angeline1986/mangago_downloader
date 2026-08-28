@@ -17,15 +17,15 @@ class ConfigManager:
         self.config_file = Path(config_file)
         self.default_config = {
             "download_location": str(Path.home() / "Downloads" / "mangago"),
-            "max_workers": 5,
+            "max_workers": 3,
             "retry_count": 3,
             "timeout": 30,
             "page_delay": 2.0,
             "overwrite_existing": False,
             "format": "images",
             "delete_images": False,
-            "image_format": "png",
-            "keep_originals": True
+            "image_format": "original",
+            "keep_originals": False
         }
         self.config = self.load_config()
     
