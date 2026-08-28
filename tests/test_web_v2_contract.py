@@ -13,7 +13,7 @@ if 'img2pdf' not in sys.modules:
     sys.modules['img2pdf'] = stub
 
 from src.converter import _get_image_files
-from src.models import Manga, SearchResult, Chapter
+from src.models import Manga, SearchResult, Chapter, DownloadResult
 from webapp import server
 
 
@@ -108,6 +108,7 @@ class WebV2ContractTests(unittest.TestCase):
 
     def test_default_page_delay_remains_two_seconds(self):
         self.assertEqual(float(server._config.get('page_delay', 2.0)), 2.0)
+        self.assertFalse(server._config.get('auto_generate_pdf', False))
 
     def test_pdf_endpoint_generates_pdf_for_completed_chapter(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -185,6 +186,216 @@ class WebV2ContractTests(unittest.TestCase):
         self.assertEqual(status, 202)
         self.assertIn('job_id', data)
         runner.assert_called_once()
+
+    def test_auto_generate_pdf_false_does_not_generate_after_completion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            chapter_dir.mkdir(parents=True)
+            Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            manga = Manga(title='Demo', url='https://example.test/manga')
+            chapter = Chapter(number=1.0, url='https://example.test/ch1')
+            job_id, _ = self.make_completed_job(chapter_dir, chapter.url)
+            with patch.object(server, 'discover_chapter_reader_pages_with_cookies', return_value=(['https://example.test/pg-1'], '')):
+                with patch.object(server.ChapterDownloader, 'download_chapters') as download_chapters:
+                    download_chapters.side_effect = lambda manga_arg, chapters_arg, result_callback: result_callback(
+                        DownloadResult(chapter=chapter, success=True, file_path=str(chapter_dir), images_downloaded=1)
+                    )
+                    with patch.object(server, 'convert_to_pdf') as convert:
+                        server._run_download(job_id, manga, [chapter], {'download_location': tmp, 'auto_generate_pdf': False})
+            convert.assert_not_called()
+
+    def test_auto_generate_pdf_true_generates_after_chapter_completion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            chapter_dir.mkdir(parents=True)
+            Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            manga = Manga(title='Demo', url='https://example.test/manga')
+            chapter = Chapter(number=1.0, url='https://example.test/ch1')
+            job_id, _ = self.make_completed_job(chapter_dir, chapter.url)
+            with patch.object(server, 'discover_chapter_reader_pages_with_cookies', return_value=(['https://example.test/pg-1'], '')):
+                with patch.object(server.ChapterDownloader, 'download_chapters') as download_chapters:
+                    download_chapters.side_effect = lambda manga_arg, chapters_arg, result_callback: result_callback(
+                        DownloadResult(chapter=chapter, success=True, file_path=str(chapter_dir), images_downloaded=1)
+                    )
+                    with patch.object(server, 'convert_to_pdf', return_value=str(chapter_dir / 'Ch. 1.pdf')) as convert:
+                        server._run_download(job_id, manga, [chapter], {'download_location': tmp, 'auto_generate_pdf': True})
+            convert.assert_called_once()
+            with server._jobs_lock:
+                row = server._jobs[job_id]['chapters'][0]
+            self.assertEqual(row['status'], 'completed')
+            self.assertEqual(row['pdf_status'], 'generated')
+
+    def test_auto_generate_pdf_waits_for_download_result_callback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            chapter_dir.mkdir(parents=True)
+            Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            manga = Manga(title='Demo', url='https://example.test/manga')
+            chapter = Chapter(number=1.0, url='https://example.test/ch1')
+            job_id, _ = self.make_completed_job(chapter_dir, chapter.url)
+            with patch.object(server, 'discover_chapter_reader_pages_with_cookies', return_value=(['https://example.test/pg-1'], '')):
+                with patch.object(server.ChapterDownloader, 'download_chapters') as download_chapters:
+                    with patch.object(server, 'convert_to_pdf', return_value=str(chapter_dir / 'Ch. 1.pdf')) as convert:
+                        def finish_later(manga_arg, chapters_arg, result_callback):
+                            convert.assert_not_called()
+                            result_callback(DownloadResult(chapter=chapter, success=True, file_path=str(chapter_dir), images_downloaded=1))
+                        download_chapters.side_effect = finish_later
+                        server._run_download(job_id, manga, [chapter], {'download_location': tmp, 'auto_generate_pdf': True})
+            convert.assert_called_once()
+
+    def test_auto_generate_pdf_does_not_regenerate_existing_pdf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            chapter_dir.mkdir(parents=True)
+            Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            Path(chapter_dir, 'Ch. 1.pdf').write_bytes(b'%PDF')
+            manga = Manga(title='Demo', url='https://example.test/manga')
+            chapter = Chapter(number=1.0, url='https://example.test/ch1')
+            job_id, _ = self.make_completed_job(chapter_dir, chapter.url)
+            with patch.object(server, 'discover_chapter_reader_pages_with_cookies', return_value=(['https://example.test/pg-1'], '')):
+                with patch.object(server.ChapterDownloader, 'download_chapters') as download_chapters:
+                    download_chapters.side_effect = lambda manga_arg, chapters_arg, result_callback: result_callback(
+                        DownloadResult(chapter=chapter, success=True, file_path=str(chapter_dir), images_downloaded=1)
+                    )
+                    with patch.object(server, 'convert_to_pdf') as convert:
+                        server._run_download(job_id, manga, [chapter], {'download_location': tmp, 'auto_generate_pdf': True})
+            convert.assert_not_called()
+            with server._jobs_lock:
+                row = server._jobs[job_id]['chapters'][0]
+            self.assertEqual(row['pdf_status'], 'existing')
+
+    def test_auto_generate_pdf_failure_is_recorded_without_failing_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            chapter_dir.mkdir(parents=True)
+            Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            manga = Manga(title='Demo', url='https://example.test/manga')
+            chapter = Chapter(number=1.0, url='https://example.test/ch1')
+            job_id, _ = self.make_completed_job(chapter_dir, chapter.url)
+            with patch.object(server, 'discover_chapter_reader_pages_with_cookies', return_value=(['https://example.test/pg-1'], '')):
+                with patch.object(server.ChapterDownloader, 'download_chapters') as download_chapters:
+                    download_chapters.side_effect = lambda manga_arg, chapters_arg, result_callback: result_callback(
+                        DownloadResult(chapter=chapter, success=True, file_path=str(chapter_dir), images_downloaded=1)
+                    )
+                    with patch.object(server, 'convert_to_pdf', side_effect=RuntimeError('boom')):
+                        server._run_download(job_id, manga, [chapter], {'download_location': tmp, 'auto_generate_pdf': True})
+            with server._jobs_lock:
+                row = server._jobs[job_id]['chapters'][0]
+                job = server._jobs[job_id]
+            self.assertEqual(row['status'], 'completed')
+            self.assertEqual(row['pdf_status'], 'failed')
+            self.assertIn('boom', row['pdf_error'])
+            self.assertEqual(job['failed'], 0)
+
+    def test_auto_generate_pdf_processes_two_completed_chapters_independently(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            chapter_dirs = [root / 'Demo' / 'Ch. 1', root / 'Demo' / 'Ch. 2']
+            for chapter_dir in chapter_dirs:
+                chapter_dir.mkdir(parents=True)
+                Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            manga = Manga(title='Demo', url='https://example.test/manga')
+            chapters = [
+                Chapter(number=1.0, url='https://example.test/ch1'),
+                Chapter(number=2.0, url='https://example.test/ch2'),
+            ]
+            job_id = 'jobpdf-two'
+            with server._jobs_lock:
+                server._jobs[job_id] = {
+                    'id': job_id,
+                    'state': 'queued',
+                    'phase': 'queued',
+                    'message': 'Na fila',
+                    'manga': {'title': 'Demo'},
+                    'total': 2,
+                    'completed': 0,
+                    'failed': 0,
+                    'progress': 0,
+                    'active_count': 0,
+                    'created_at': 1,
+                    'finished_at': None,
+                    'download_root': str(root.resolve()),
+                    'chapters': [
+                        {'number': 1.0, 'title': 'Ch.1', 'url': chapters[0].url, 'status': 'queued', 'progress': 0, 'current_page': 0, 'total_pages': 0, 'images_downloaded': 0, 'file_path': '', 'message': 'Aguardando', 'pdf_status': 'pending', 'pdf_error': '', 'pdf_message': ''},
+                        {'number': 2.0, 'title': 'Ch.2', 'url': chapters[1].url, 'status': 'queued', 'progress': 0, 'current_page': 0, 'total_pages': 0, 'images_downloaded': 0, 'file_path': '', 'message': 'Aguardando', 'pdf_status': 'pending', 'pdf_error': '', 'pdf_message': ''},
+                    ],
+                }
+
+            def finish_both(manga_arg, chapters_arg, result_callback):
+                self.assertEqual([chapter.url for chapter in chapters_arg], [chapters[0].url, chapters[1].url])
+                result_callback(DownloadResult(chapter=chapters[0], success=True, file_path=str(chapter_dirs[0]), images_downloaded=1))
+                result_callback(DownloadResult(chapter=chapters[1], success=True, file_path=str(chapter_dirs[1]), images_downloaded=1))
+
+            with patch.object(server, 'discover_chapter_reader_pages_with_cookies', side_effect=[(['https://example.test/pg-1'], ''), (['https://example.test/pg-1'], '')]):
+                with patch.object(server.ChapterDownloader, 'download_chapters', side_effect=finish_both):
+                    with patch.object(server, 'convert_to_pdf', side_effect=[RuntimeError('pdf one failed'), str(chapter_dirs[1] / 'Ch. 2.pdf')]) as convert:
+                        server._run_download(job_id, manga, chapters, {'download_location': str(root), 'auto_generate_pdf': True})
+
+            self.assertEqual(convert.call_count, 2)
+            self.assertEqual(convert.call_args_list[0].args[0], str(chapter_dirs[0].resolve()))
+            self.assertEqual(convert.call_args_list[1].args[0], str(chapter_dirs[1].resolve()))
+            self.assertNotEqual(Path(convert.call_args_list[0].kwargs['output_path']).parent, Path(convert.call_args_list[1].kwargs['output_path']).parent)
+            with server._jobs_lock:
+                rows = server._jobs[job_id]['chapters']
+                job = server._jobs[job_id]
+            self.assertEqual(rows[0]['status'], 'completed')
+            self.assertEqual(rows[0]['pdf_status'], 'failed')
+            self.assertIn('pdf one failed', rows[0]['pdf_error'])
+            self.assertEqual(rows[1]['status'], 'completed')
+            self.assertEqual(rows[1]['pdf_status'], 'generated')
+            self.assertEqual(job['failed'], 0)
+
+    def test_auto_generate_pdf_generates_both_pdfs_for_two_chapter_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            chapter_dirs = [root / 'Demo' / 'Ch. 1', root / 'Demo' / 'Ch. 2']
+            for chapter_dir in chapter_dirs:
+                chapter_dir.mkdir(parents=True)
+                Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            manga = Manga(title='Demo', url='https://example.test/manga')
+            chapters = [
+                Chapter(number=1.0, url='https://example.test/ch1'),
+                Chapter(number=2.0, url='https://example.test/ch2'),
+            ]
+            job_id = 'jobpdf-two-ok'
+            with server._jobs_lock:
+                server._jobs[job_id] = {
+                    'id': job_id,
+                    'state': 'queued',
+                    'phase': 'queued',
+                    'message': 'Na fila',
+                    'manga': {'title': 'Demo'},
+                    'total': 2,
+                    'completed': 0,
+                    'failed': 0,
+                    'progress': 0,
+                    'active_count': 0,
+                    'created_at': 1,
+                    'finished_at': None,
+                    'download_root': str(root.resolve()),
+                    'chapters': [
+                        {'number': 1.0, 'title': 'Ch.1', 'url': chapters[0].url, 'status': 'queued', 'progress': 0, 'current_page': 0, 'total_pages': 0, 'images_downloaded': 0, 'file_path': '', 'message': 'Aguardando', 'pdf_status': 'pending', 'pdf_error': '', 'pdf_message': ''},
+                        {'number': 2.0, 'title': 'Ch.2', 'url': chapters[1].url, 'status': 'queued', 'progress': 0, 'current_page': 0, 'total_pages': 0, 'images_downloaded': 0, 'file_path': '', 'message': 'Aguardando', 'pdf_status': 'pending', 'pdf_error': '', 'pdf_message': ''},
+                    ],
+                }
+
+            def finish_both(manga_arg, chapters_arg, result_callback):
+                result_callback(DownloadResult(chapter=chapters[0], success=True, file_path=str(chapter_dirs[0]), images_downloaded=1))
+                result_callback(DownloadResult(chapter=chapters[1], success=True, file_path=str(chapter_dirs[1]), images_downloaded=1))
+
+            with patch.object(server, 'discover_chapter_reader_pages_with_cookies', side_effect=[(['https://example.test/pg-1'], ''), (['https://example.test/pg-1'], '')]):
+                with patch.object(server.ChapterDownloader, 'download_chapters', side_effect=finish_both):
+                    with patch.object(server, 'convert_to_pdf', side_effect=[str(chapter_dirs[0] / 'Ch. 1.pdf'), str(chapter_dirs[1] / 'Ch. 2.pdf')]) as convert:
+                        server._run_download(job_id, manga, chapters, {'download_location': str(root), 'auto_generate_pdf': True})
+
+            self.assertEqual(convert.call_count, 2)
+            self.assertEqual(convert.call_args_list[0].args[0], str(chapter_dirs[0].resolve()))
+            self.assertEqual(convert.call_args_list[1].args[0], str(chapter_dirs[1].resolve()))
+            with server._jobs_lock:
+                rows = server._jobs[job_id]['chapters']
+            self.assertEqual(rows[0]['pdf_status'], 'generated')
+            self.assertEqual(rows[1]['pdf_status'], 'generated')
+            self.assertNotEqual(Path(rows[0]['pdf_path']).parent, Path(rows[1]['pdf_path']).parent)
 
 
 if __name__ == '__main__':

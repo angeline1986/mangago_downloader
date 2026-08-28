@@ -29,7 +29,8 @@ class ConfigManager:
             "format": "images",
             "delete_images": False,
             "image_format": "original",
-            "keep_originals": False
+            "keep_originals": False,
+            "auto_generate_pdf": False
         }
         self.config = self.load_config()
     

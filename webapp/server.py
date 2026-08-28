@@ -115,6 +115,43 @@ def _path_is_relative_to(path: Path, root: Path) -> bool:
         return False
 
 
+def _generate_pdf_for_chapter(
+    job_id: str,
+    chapter_url: str,
+    row: Dict[str, Any],
+    download_root: Path,
+    regenerate: bool = False,
+) -> tuple[int, Dict[str, Any]]:
+    chapter_dir_raw = str(row.get("file_path") or "").strip()
+    if not chapter_dir_raw:
+        return 404, {"error": "Diretório do capítulo não registrado."}
+    chapter_dir = Path(chapter_dir_raw).resolve()
+    if not _path_is_relative_to(chapter_dir, download_root):
+        return 400, {"error": "Diretório inválido para este download."}
+    if not chapter_dir.is_dir():
+        return 404, {"error": "Diretório do capítulo não existe."}
+    if not _get_image_files(str(chapter_dir)):
+        return 409, {"error": "Nenhuma imagem encontrada para gerar PDF."}
+
+    pdf_path = chapter_dir / f"{chapter_dir.name}.pdf"
+    if pdf_path.exists() and not regenerate:
+        _update_chapter_row(job_id, chapter_url, pdf_path=str(pdf_path), pdf_status="existing", pdf_message="PDF já existe")
+        return 409, {"error": "PDF já existente.", "pdf_path": str(pdf_path), "already_exists": True}
+
+    _update_chapter_row(job_id, chapter_url, pdf_status="pending", pdf_message="Gerando PDF…", pdf_error="")
+    try:
+        created = convert_to_pdf(str(chapter_dir), output_path=str(pdf_path), delete_images=False)
+    except Exception as exc:
+        _update_chapter_row(job_id, chapter_url, pdf_status="failed", pdf_message="Falha ao gerar PDF", pdf_error=str(exc))
+        return 500, {"error": f"Falha ao gerar PDF: {exc}"}
+    if not created:
+        _update_chapter_row(job_id, chapter_url, pdf_status="failed", pdf_message="Falha ao gerar PDF", pdf_error="Falha na geração do PDF.")
+        return 500, {"error": "Falha na geração do PDF."}
+
+    _update_chapter_row(job_id, chapter_url, pdf_path=created, pdf_status="generated", pdf_message="PDF gerado", pdf_error="")
+    return 200, {"ok": True, "pdf_path": created, "message": "PDF gerado"}
+
+
 def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: Dict[str, Any]) -> None:
     downloader = None
     completed = 0
@@ -194,6 +231,14 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
                         file_path=result.file_path or "",
                         images_downloaded=result.images_downloaded,
                     )
+                    if bool(settings.get("auto_generate_pdf", False)) and result.file_path:
+                        row = {"file_path": result.file_path}
+                        with _jobs_lock:
+                            job = _jobs.get(job_id) or {}
+                            download_root = Path(job.get("download_root") or str(_configured_download_root(settings))).resolve()
+                        status, payload = _generate_pdf_for_chapter(job_id, chapter.url, row, download_root)
+                        if status >= 400 and payload.get("already_exists"):
+                            pass
                 else:
                     failed += 1
                     _update_chapter_row(job_id, chapter.url, status="failed", progress=100, message=result.error_message or "Falha no download")
@@ -332,7 +377,8 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
             settings = _config.get_all()
             download_root = str(_configured_download_root(settings))
             rows = [{"number": ch.number, "title": ch.title or f"Capítulo {ch.number:g}", "url": ch.url,
-                     "status": "queued", "progress": 0, "current_page": 0, "total_pages": 0, "message": "Aguardando"}
+                     "status": "queued", "progress": 0, "current_page": 0, "total_pages": 0, "message": "Aguardando",
+                     "pdf_status": "pending", "pdf_error": "", "pdf_message": ""}
                     for ch in chapters]
             with _jobs_lock:
                 _jobs[job_id] = {
@@ -371,39 +417,9 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                 self._json({"error": "O capítulo ainda não está concluído."}, 409)
                 return
 
-            chapter_dir_raw = str(row.get("file_path") or "").strip()
-            if not chapter_dir_raw:
-                self._json({"error": "Diretório do capítulo não registrado."}, 404)
-                return
-            chapter_dir = Path(chapter_dir_raw).resolve()
-            if not _path_is_relative_to(chapter_dir, download_root):
-                self._json({"error": "Diretório inválido para este download."}, 400)
-                return
-            if not chapter_dir.is_dir():
-                self._json({"error": "Diretório do capítulo não existe."}, 404)
-                return
-            if not _get_image_files(str(chapter_dir)):
-                self._json({"error": "Nenhuma imagem encontrada para gerar PDF."}, 409)
-                return
-
-            pdf_path = chapter_dir / f"{chapter_dir.name}.pdf"
             regenerate = bool(payload.get("regenerate", False))
-            if pdf_path.exists() and not regenerate:
-                _update_chapter_row(job_id, chapter_url, pdf_path=str(pdf_path), pdf_status="exists", pdf_message="PDF já existe")
-                self._json({"error": "PDF já existente.", "pdf_path": str(pdf_path), "already_exists": True}, 409)
-                return
-
-            try:
-                created = convert_to_pdf(str(chapter_dir), output_path=str(pdf_path), delete_images=False)
-            except Exception as exc:
-                self._json({"error": f"Falha ao gerar PDF: {exc}"}, 500)
-                return
-            if not created:
-                self._json({"error": "Falha na geração do PDF."}, 500)
-                return
-
-            _update_chapter_row(job_id, chapter_url, pdf_path=created, pdf_status="generated", pdf_message="PDF gerado")
-            self._json({"ok": True, "pdf_path": created, "message": "PDF gerado"})
+            status, response = _generate_pdf_for_chapter(job_id, chapter_url, row, download_root, regenerate=regenerate)
+            self._json(response, status)
             return
         self.send_error(404)
 
@@ -414,7 +430,7 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
             return
         payload = self._read_json()
         allowed = {"download_location", "max_workers", "retry_count", "timeout", "page_delay", "overwrite_existing",
-                   "format", "delete_images", "image_format", "keep_originals"}
+                   "format", "delete_images", "image_format", "keep_originals", "auto_generate_pdf"}
         current = _config.get_all()
         for key, value in payload.items():
             if key in allowed:
