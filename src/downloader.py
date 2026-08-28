@@ -365,8 +365,29 @@ class ChapterDownloader:
         failures: List[str] = []
         downloaded = 0
         queue: asyncio.Queue = asyncio.Queue()
+        rate_lock = asyncio.Lock()
+        last_page_start: Optional[float] = None
         for index, reader_url in enumerate(page_urls, start=1):
             queue.put_nowait((index, reader_url))
+
+        async def wait_for_page_slot(page_number: int) -> None:
+            nonlocal last_page_start
+            if self.page_delay <= 0:
+                return
+            async with rate_lock:
+                now = time.monotonic()
+                if last_page_start is not None:
+                    elapsed = now - last_page_start
+                    wait_time = self.page_delay - elapsed
+                    if wait_time > 0:
+                        await asyncio.sleep(wait_time)
+                        now = time.monotonic()
+                interval = None if last_page_start is None else now - last_page_start
+                last_page_start = now
+                if interval is None:
+                    print(f"[V4.1][RATE][PAGE {page_number:03d}] liberada | monotonic={now:.3f}", flush=True)
+                else:
+                    print(f"[V4.1][RATE][PAGE {page_number:03d}] liberada | intervalo={interval:.3f}s", flush=True)
 
         async def locate_image(page, reader_url: str, index: int) -> str:
             page_number = _page_number_from_url(reader_url) or index
@@ -425,6 +446,7 @@ class ChapterDownloader:
                                 return
 
                             page_number = _page_number_from_url(reader_url) or index
+                            await wait_for_page_slot(page_number)
                             logger.info("[PAGE %03d] iniciando via Playwright", page_number)
                             print(f"[V4.1][PAGE {page_number:03d}] iniciando | {reader_url}", flush=True)
                             try:
