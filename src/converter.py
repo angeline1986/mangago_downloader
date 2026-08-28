@@ -7,8 +7,8 @@ import zipfile
 import re
 from pathlib import Path
 from typing import List, Optional
-import img2pdf
-from PIL import Image
+
+from .pdf.generator import generate_pdf_from_images
 
 
 def convert_to_pdf(
@@ -31,9 +31,7 @@ def convert_to_pdf(
             chapter_name = os.path.basename(chapter_dir)
             output_path = os.path.join(chapter_dir, f"{chapter_name}.pdf")
         
-        # By passing the raw image data, img2pdf avoids re-encoding and preserves quality.
-        with open(output_path, "wb") as f:
-            f.write(img2pdf.convert([open(i, "rb").read() for i in image_files]))
+        generate_pdf_from_images(image_files, output_path)
         
         if delete_images:
             for image_file in image_files:

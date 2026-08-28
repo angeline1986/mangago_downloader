@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 from urllib.parse import parse_qs, urlparse
 
 from gui.config import ConfigManager, DEFAULT_OUTPUT_DIR
-from src.converter import convert_to_cbz, convert_to_pdf
+from src.converter import _get_image_files, convert_to_cbz, convert_to_pdf
 from src.downloader import ChapterDownloader, discover_chapter_reader_pages_with_cookies, get_chapter_list
 from src.models import Chapter, Manga
 from src.search import get_manga_details, search_manga
@@ -102,6 +102,19 @@ def _refresh_job_progress(job_id: str) -> None:
         job["active_count"] = sum(1 for r in rows if r.get("status") in {"downloading", "converting"})
 
 
+def _configured_download_root(settings: Dict[str, Any] | None = None) -> Path:
+    settings = settings or _config.get_all()
+    return Path(settings.get("download_location") or str(DEFAULT_OUTPUT_DIR)).resolve()
+
+
+def _path_is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: Dict[str, Any]) -> None:
     downloader = None
     completed = 0
@@ -111,7 +124,7 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
         _update_job(job_id, state="running", phase="preparing", message="Preparando capítulos…", active_count=0)
         downloader = ChapterDownloader(
             max_workers=workers,
-            download_dir=settings.get("download_location") or str(DEFAULT_OUTPUT_DIR),
+            download_dir=str(_configured_download_root(settings)),
             image_format=settings.get("image_format", "original"),
             keep_originals=bool(settings.get("keep_originals", False)),
             page_delay=float(settings.get("page_delay", 2.0)),
@@ -172,7 +185,15 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
                             convert_to_pdf(result.file_path, delete_images=bool(settings.get("delete_images", False)))
                         else:
                             convert_to_cbz(result.file_path, delete_images=bool(settings.get("delete_images", False)))
-                    _update_chapter_row(job_id, chapter.url, status="completed", progress=100, message="Concluído")
+                    _update_chapter_row(
+                        job_id,
+                        chapter.url,
+                        status="completed",
+                        progress=100,
+                        message="Concluído",
+                        file_path=result.file_path or "",
+                        images_downloaded=result.images_downloaded,
+                    )
                 else:
                     failed += 1
                     _update_chapter_row(job_id, chapter.url, status="failed", progress=100, message=result.error_message or "Falha no download")
@@ -309,6 +330,7 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                 return
             job_id = uuid.uuid4().hex[:12]
             settings = _config.get_all()
+            download_root = str(_configured_download_root(settings))
             rows = [{"number": ch.number, "title": ch.title or f"Capítulo {ch.number:g}", "url": ch.url,
                      "status": "queued", "progress": 0, "current_page": 0, "total_pages": 0, "message": "Aguardando"}
                     for ch in chapters]
@@ -316,10 +338,72 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                 _jobs[job_id] = {
                     "id": job_id, "state": "queued", "phase": "queued", "message": "Na fila", "manga": _manga_dict(manga),
                     "total": len(chapters), "completed": 0, "failed": 0, "progress": 0, "active_count": 0,
-                    "created_at": time.time(), "finished_at": None, "chapters": rows,
+                    "created_at": time.time(), "finished_at": None, "download_root": download_root, "chapters": rows,
                 }
             threading.Thread(target=_run_download, args=(job_id, manga, chapters, settings), daemon=True).start()
             self._json({"job_id": job_id}, 202)
+            return
+
+        if path == "/api/pdf":
+            job_id = str(payload.get("job_id") or "").strip()
+            chapter_url = str(payload.get("chapter_url") or "").strip()
+            if not job_id or not chapter_url:
+                self._json({"error": "Informe o download e o capítulo."}, 400)
+                return
+
+            with _jobs_lock:
+                job = _jobs.get(job_id)
+                row = None
+                if job:
+                    for candidate in job.get("chapters", []):
+                        if candidate.get("url") == chapter_url:
+                            row = candidate
+                            break
+                    download_root = Path(job.get("download_root") or str(DEFAULT_OUTPUT_DIR)).resolve() if job else None
+
+            if not job:
+                self._json({"error": "Download não encontrado."}, 404)
+                return
+            if not row:
+                self._json({"error": "Capítulo não encontrado neste download."}, 404)
+                return
+            if row.get("status") != "completed":
+                self._json({"error": "O capítulo ainda não está concluído."}, 409)
+                return
+
+            chapter_dir_raw = str(row.get("file_path") or "").strip()
+            if not chapter_dir_raw:
+                self._json({"error": "Diretório do capítulo não registrado."}, 404)
+                return
+            chapter_dir = Path(chapter_dir_raw).resolve()
+            if not _path_is_relative_to(chapter_dir, download_root):
+                self._json({"error": "Diretório inválido para este download."}, 400)
+                return
+            if not chapter_dir.is_dir():
+                self._json({"error": "Diretório do capítulo não existe."}, 404)
+                return
+            if not _get_image_files(str(chapter_dir)):
+                self._json({"error": "Nenhuma imagem encontrada para gerar PDF."}, 409)
+                return
+
+            pdf_path = chapter_dir / f"{chapter_dir.name}.pdf"
+            regenerate = bool(payload.get("regenerate", False))
+            if pdf_path.exists() and not regenerate:
+                _update_chapter_row(job_id, chapter_url, pdf_path=str(pdf_path), pdf_status="exists", pdf_message="PDF já existe")
+                self._json({"error": "PDF já existente.", "pdf_path": str(pdf_path), "already_exists": True}, 409)
+                return
+
+            try:
+                created = convert_to_pdf(str(chapter_dir), output_path=str(pdf_path), delete_images=False)
+            except Exception as exc:
+                self._json({"error": f"Falha ao gerar PDF: {exc}"}, 500)
+                return
+            if not created:
+                self._json({"error": "Falha na geração do PDF."}, 500)
+                return
+
+            _update_chapter_row(job_id, chapter_url, pdf_path=created, pdf_status="generated", pdf_message="PDF gerado")
+            self._json({"ok": True, "pdf_path": created, "message": "PDF gerado"})
             return
         self.send_error(404)
 

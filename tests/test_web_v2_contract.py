@@ -43,6 +43,38 @@ class WebV2ContractTests(unittest.TestCase):
             return response.status, json.loads(raw.decode())
         return response.status, raw.decode()
 
+    def make_completed_job(self, chapter_dir, chapter_url='https://example.test/ch1'):
+        job_id = 'jobpdf'
+        with server._jobs_lock:
+            server._jobs[job_id] = {
+                'id': job_id,
+                'state': 'completed',
+                'phase': 'done',
+                'message': 'Download concluído',
+                'manga': {'title': 'Demo'},
+                'total': 1,
+                'completed': 1,
+                'failed': 0,
+                'progress': 100,
+                'active_count': 0,
+                'created_at': 1,
+                'finished_at': 2,
+                'download_root': str(Path(chapter_dir).parents[1]),
+                'chapters': [{
+                    'number': 1.0,
+                    'title': 'Ch.1',
+                    'url': chapter_url,
+                    'status': 'completed',
+                    'progress': 100,
+                    'current_page': 1,
+                    'total_pages': 1,
+                    'images_downloaded': 1,
+                    'file_path': str(chapter_dir),
+                    'message': 'Concluído',
+                }],
+            }
+        return job_id, chapter_url
+
     def test_health_and_local_web_shell(self):
         status, data = self.request('GET', '/api/health')
         self.assertEqual(status, 200)
@@ -76,6 +108,83 @@ class WebV2ContractTests(unittest.TestCase):
 
     def test_default_page_delay_remains_two_seconds(self):
         self.assertEqual(float(server._config.get('page_delay', 2.0)), 2.0)
+
+    def test_pdf_endpoint_generates_pdf_for_completed_chapter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            chapter_dir.mkdir(parents=True)
+            Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            job_id, chapter_url = self.make_completed_job(chapter_dir)
+            expected_pdf = chapter_dir / 'Ch. 1.pdf'
+            with patch.object(server, 'convert_to_pdf', return_value=str(expected_pdf)) as convert:
+                status, data = self.request('POST', '/api/pdf', {'job_id': job_id, 'chapter_url': chapter_url})
+        self.assertEqual(status, 200)
+        self.assertTrue(data['ok'])
+        convert.assert_called_once_with(str(chapter_dir.resolve()), output_path=str(expected_pdf.resolve()), delete_images=False)
+        with server._jobs_lock:
+            row = server._jobs[job_id]['chapters'][0]
+        self.assertEqual(row['pdf_status'], 'generated')
+        self.assertEqual(row['pdf_message'], 'PDF gerado')
+
+    def test_pdf_endpoint_rejects_empty_chapter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            chapter_dir.mkdir(parents=True)
+            job_id, chapter_url = self.make_completed_job(chapter_dir)
+            status, data = self.request('POST', '/api/pdf', {'job_id': job_id, 'chapter_url': chapter_url})
+        self.assertEqual(status, 409)
+        self.assertIn('Nenhuma imagem', data['error'])
+
+    def test_pdf_endpoint_rejects_unknown_chapter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            chapter_dir.mkdir(parents=True)
+            job_id, _ = self.make_completed_job(chapter_dir)
+            status, data = self.request('POST', '/api/pdf', {'job_id': job_id, 'chapter_url': 'https://example.test/missing'})
+        self.assertEqual(status, 404)
+        self.assertIn('Capítulo não encontrado', data['error'])
+
+    def test_pdf_endpoint_rejects_missing_chapter_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            job_id, chapter_url = self.make_completed_job(chapter_dir)
+            status, data = self.request('POST', '/api/pdf', {'job_id': job_id, 'chapter_url': chapter_url})
+        self.assertEqual(status, 404)
+        self.assertIn('não existe', data['error'])
+
+    def test_pdf_endpoint_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
+            chapter_dir = Path(outside) / 'Ch. 1'
+            chapter_dir.mkdir()
+            Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            job_id, chapter_url = self.make_completed_job(chapter_dir)
+            with server._jobs_lock:
+                server._jobs[job_id]['download_root'] = str(Path(tmp).resolve())
+            status, data = self.request('POST', '/api/pdf', {'job_id': job_id, 'chapter_url': chapter_url})
+        self.assertEqual(status, 400)
+        self.assertIn('Diretório inválido', data['error'])
+
+    def test_pdf_endpoint_reports_existing_pdf_without_duplicate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'
+            chapter_dir.mkdir(parents=True)
+            Path(chapter_dir, 'page-001.jpg').write_bytes(b'image')
+            Path(chapter_dir, 'Ch. 1.pdf').write_bytes(b'%PDF')
+            job_id, chapter_url = self.make_completed_job(chapter_dir)
+            with patch.object(server, 'convert_to_pdf') as convert:
+                status, data = self.request('POST', '/api/pdf', {'job_id': job_id, 'chapter_url': chapter_url})
+        self.assertEqual(status, 409)
+        self.assertTrue(data['already_exists'])
+        convert.assert_not_called()
+
+    def test_download_post_still_creates_job(self):
+        manga = {'title': 'Demo', 'url': 'https://example.test/manga'}
+        chapters = [{'number': 1.0, 'url': 'https://example.test/ch1', 'title': 'Ch.1'}]
+        with patch.object(server, '_run_download') as runner:
+            status, data = self.request('POST', '/api/downloads', {'manga': manga, 'chapters': chapters})
+        self.assertEqual(status, 202)
+        self.assertIn('job_id', data)
+        runner.assert_called_once()
 
 
 if __name__ == '__main__':

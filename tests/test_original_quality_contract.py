@@ -49,8 +49,8 @@ class OriginalQualityContractTests(unittest.TestCase):
         self.assertIn("zipf.write(image_file, arcname)", converter)
 
     def test_pdf_uses_img2pdf(self):
-        converter = (ROOT / "src/converter.py").read_text(encoding="utf-8")
-        self.assertIn("img2pdf.convert", converter)
+        generator = (ROOT / "src/pdf/generator.py").read_text(encoding="utf-8")
+        self.assertIn("img2pdf.convert", generator)
 
 if __name__ == "__main__":
     unittest.main()
