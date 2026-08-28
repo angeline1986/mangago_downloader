@@ -1,6 +1,9 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
+
+from gui.config import ConfigManager
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -9,13 +12,22 @@ class OriginalQualityContractTests(unittest.TestCase):
         downloader = (ROOT / "src/downloader.py").read_text(encoding="utf-8")
         config = (ROOT / "gui/config.py").read_text(encoding="utf-8")
         server = (ROOT / "webapp/server.py").read_text(encoding="utf-8")
-        current = json.loads((ROOT / "gui_config.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as tmp:
+            current = ConfigManager(str(Path(tmp) / "gui_config.json")).get_all()
         self.assertIn('image_format: str = "original"', downloader)
         self.assertIn('keep_originals: bool = False', downloader)
         self.assertIn('"image_format": "original"', config)
         self.assertIn('"keep_originals": False', config)
         self.assertIn('settings.get("image_format", "original")', server)
         self.assertEqual(current["image_format"], "original")
+        self.assertFalse(current["keep_originals"])
+
+    def test_persisted_user_image_format_is_not_overwritten_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "gui_config.json"
+            config_path.write_text(json.dumps({"image_format": "png"}), encoding="utf-8")
+            current = ConfigManager(str(config_path)).get_all()
+        self.assertEqual(current["image_format"], "png")
         self.assertFalse(current["keep_originals"])
 
     def test_original_mode_writes_raw_bytes(self):

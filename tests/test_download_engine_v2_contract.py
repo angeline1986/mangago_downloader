@@ -1,6 +1,8 @@
-import json
+import tempfile
 import unittest
 from pathlib import Path
+
+from gui.config import ConfigManager
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -29,7 +31,8 @@ class DownloadEngineV2Contract(unittest.TestCase):
         self.assertIn('chapterTypeSegment', text)
 
     def test_original_quality_is_default(self):
-        config=json.loads((ROOT/'gui_config.json').read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            config=ConfigManager(str(Path(tmp)/'gui_config.json')).get_all()
         self.assertEqual(config['image_format'], 'original')
         self.assertFalse(config['keep_originals'])
         html=(ROOT/'webapp/templates/index.html').read_text()

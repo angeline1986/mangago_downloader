@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import parse_qs, urlparse
 
-from gui.config import ConfigManager
+from gui.config import ConfigManager, DEFAULT_OUTPUT_DIR
 from src.converter import convert_to_cbz, convert_to_pdf
 from src.downloader import ChapterDownloader, discover_chapter_reader_pages_with_cookies, get_chapter_list
 from src.models import Chapter, Manga
@@ -111,7 +111,7 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
         _update_job(job_id, state="running", phase="preparing", message="Preparando capítulos…", active_count=0)
         downloader = ChapterDownloader(
             max_workers=workers,
-            download_dir=settings.get("download_location") or str(Path.home() / "Downloads" / "mangago"),
+            download_dir=settings.get("download_location") or str(DEFAULT_OUTPUT_DIR),
             image_format=settings.get("image_format", "original"),
             keep_originals=bool(settings.get("keep_originals", False)),
             page_delay=float(settings.get("page_delay", 2.0)),

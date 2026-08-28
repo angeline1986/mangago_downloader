@@ -25,6 +25,10 @@ SUPPORTED_IMAGE_MODES = {"original", "png"}
 logger = logging.getLogger("mangago.engine")
 
 
+def _chapter_dir_name(chapter: Chapter) -> str:
+    return sanitize_filename(f"Ch. {chapter.number:g}")
+
+
 def _page_number_from_url(url: str) -> Optional[int]:
     match = re.search(r"/pg-(\d+)/?", url)
     return int(match.group(1)) if match else None
@@ -347,7 +351,7 @@ class ChapterDownloader:
             return DownloadResult(chapter=chapter, success=False, error_message="No reader pages found.")
 
         manga_dir = os.path.join(self.download_dir, sanitize_filename(manga.title))
-        chapter_dir = os.path.join(manga_dir, f"Chapter_{chapter.number}")
+        chapter_dir = os.path.join(manga_dir, _chapter_dir_name(chapter))
         create_directory(chapter_dir)
         originals_dir = os.path.join(chapter_dir, "originais")
         if self.keep_originals and self.image_format == "png":
@@ -530,7 +534,7 @@ class ChapterDownloader:
             return DownloadResult(chapter=chapter, success=False, error_message="No image URLs found.")
 
         manga_dir = os.path.join(self.download_dir, sanitize_filename(manga.title))
-        chapter_dir = os.path.join(manga_dir, f"Chapter_{chapter.number}")
+        chapter_dir = os.path.join(manga_dir, _chapter_dir_name(chapter))
         create_directory(chapter_dir)
         originals_dir = os.path.join(chapter_dir, "originais")
         if self.keep_originals and self.image_format == "png":

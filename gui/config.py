@@ -9,6 +9,10 @@ from typing import Any, Dict
 from pathlib import Path
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
+
+
 class ConfigManager:
     """Manages application configuration settings."""
     
@@ -16,7 +20,7 @@ class ConfigManager:
         """Initialize the configuration manager."""
         self.config_file = Path(config_file)
         self.default_config = {
-            "download_location": str(Path.home() / "Downloads" / "mangago"),
+            "download_location": str(DEFAULT_OUTPUT_DIR),
             "max_workers": 3,
             "retry_count": 3,
             "timeout": 30,
