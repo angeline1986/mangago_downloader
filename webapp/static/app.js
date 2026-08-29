@@ -172,7 +172,7 @@ async function loadComixChapters(){
   }
 
   $('#comixLoadButton').disabled=true;
-  setBusy('Carregando capítulos do Comix…');
+  setBusy('Listando capítulos do Comix…');
 
   try{
     const data=await api('/api/comix/chapters',{
