@@ -157,5 +157,62 @@ class ComixProviderTests(unittest.TestCase):
         )
 
 
+
+class ComixSnapshotTests(unittest.IsolatedAsyncioTestCase):
+    async def test_capture_special_snapshot_returns_png_from_preserved_canvas(self):
+        from src.comix_provider import _capture_special_snapshot
+
+        png_bytes = io.BytesIO()
+        Image.new("RGB", (20, 30), (255, 0, 0)).save(png_bytes, "PNG")
+        expected = png_bytes.getvalue()
+
+        class FakeLocator:
+            async def screenshot(self, **kwargs):
+                self.kwargs = kwargs
+                return expected
+
+        class FakePage:
+            def __init__(self):
+                self.locator_value = FakeLocator()
+                self.evaluate_calls = 0
+
+            async def evaluate(self, script, *args):
+                self.evaluate_calls += 1
+
+                if self.evaluate_calls == 1:
+                    return {"width": 20, "height": 30}
+
+                return None
+
+            def locator(self, selector):
+                self.selector = selector
+                return self.locator_value
+
+        page = FakePage()
+
+        result = await _capture_special_snapshot(page)
+
+        self.assertEqual(result, expected)
+        self.assertEqual(
+            page.selector,
+            "#__comix_snapshot_capture",
+        )
+
+        with Image.open(io.BytesIO(result)) as image:
+            self.assertEqual(image.size, (20, 30))
+            self.assertEqual(image.format, "PNG")
+
+    async def test_capture_special_snapshot_returns_none_without_canvas(self):
+        from src.comix_provider import _capture_special_snapshot
+
+        class FakePage:
+            async def evaluate(self, script, *args):
+                return None
+
+        result = await _capture_special_snapshot(FakePage())
+
+        self.assertIsNone(result)
+
+
 if __name__ == "__main__":
     unittest.main()

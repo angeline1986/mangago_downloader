@@ -41,6 +41,7 @@ COMIX_INIT_SCRIPT = r"""
   window.chrome.runtime = window.chrome.runtime || {};
 
   window.__comixDraws = [];
+  window.__comixSnapshotCanvas = null;
 
   const install = (proto, label) => {
     if (!proto || proto.__comixOriginalDrawImage) return;
@@ -49,9 +50,17 @@ COMIX_INIT_SCRIPT = r"""
       value: original,
       configurable: true
     });
+
     proto.drawImage = function(...args) {
+      /*
+       * Let Comix render first.  The snapshot below must reflect the canvas
+       * exactly as the browser sees it after the current tile was painted.
+       */
+      const result = original.apply(this, args);
+
       if (args.length === 9) {
         const [source, sx, sy, sw, sh, dx, dy, dw, dh] = args;
+
         window.__comixDraws.push({
           context: label,
           sx, sy, sw, sh, dx, dy, dw, dh,
@@ -62,8 +71,41 @@ COMIX_INIT_SCRIPT = r"""
           sourceSrc: source?.currentSrc ?? source?.src ?? null,
           time: Math.round(performance.now())
         });
+
+        /*
+         * Comix virtualizes its reader and may remove/zero the original
+         * canvas immediately after rendering.  Preserve an independent
+         * pixel copy after every observed tile.  When the Python side later
+         * confirms a coherent grid, the most recent snapshot is the completed
+         * browser-rendered page.
+         *
+         * Use the unpatched original drawImage to avoid recursively recording
+         * this internal copy as another Comix tile.
+         */
+        if (
+          label === 'canvas' &&
+          this.canvas &&
+          this.canvas.width > 0 &&
+          this.canvas.height > 0
+        ) {
+          try {
+            const snapshot = document.createElement('canvas');
+            snapshot.width = this.canvas.width;
+            snapshot.height = this.canvas.height;
+
+            const snapshotContext = snapshot.getContext('2d');
+            if (snapshotContext) {
+              original.call(snapshotContext, this.canvas, 0, 0);
+              window.__comixSnapshotCanvas = snapshot;
+            }
+          } catch (_) {
+            // Snapshot is an optimization. The existing wowpic rebuild remains
+            // available as a fallback on the Python side.
+          }
+        }
       }
-      return original.apply(this, args);
+
+      return result;
     };
   };
 
@@ -432,6 +474,83 @@ async def _parking_wrapper(page, page_number: int, total: int):
     return page.locator(f'{COMIX_PAGE_SELECTOR}[data-page="{candidate}"]').first
 
 
+async def _capture_special_snapshot(page) -> Optional[bytes]:
+    """Capture the browser-rendered Comix canvas preserved by COMIX_INIT_SCRIPT.
+
+    The source canvas may already have been removed or zeroed by Comix
+    virtualization.  __comixSnapshotCanvas is an independent copy created
+    immediately after drawImage calls, so it can still be attached temporarily
+    and captured by Chromium.
+
+    Returns None when no usable snapshot is available; callers must then use
+    the existing wowpic reconstruction fallback.
+    """
+    snapshot_id = "__comix_snapshot_capture"
+
+    info = await page.evaluate(
+        """(snapshotId) => {
+          const snapshot = window.__comixSnapshotCanvas;
+
+          if (
+            !snapshot ||
+            !snapshot.width ||
+            !snapshot.height
+          ) {
+            return null;
+          }
+
+          const previous = document.getElementById(snapshotId);
+          if (previous) previous.remove();
+
+          snapshot.id = snapshotId;
+
+          Object.assign(snapshot.style, {
+            position: 'absolute',
+            left: '0px',
+            top: '0px',
+            zIndex: '2147483647',
+            display: 'block',
+            visibility: 'visible',
+            opacity: '1',
+            width: snapshot.width + 'px',
+            height: snapshot.height + 'px'
+          });
+
+          document.documentElement.appendChild(snapshot);
+
+          return {
+            width: snapshot.width,
+            height: snapshot.height
+          };
+        }""",
+        snapshot_id,
+    )
+
+    if not info:
+        return None
+
+    try:
+        locator = page.locator(f"#{snapshot_id}")
+        return await locator.screenshot(
+            type="png",
+            animations="disabled",
+            timeout=5000,
+        )
+    except Exception:
+        return None
+    finally:
+        try:
+            await page.evaluate(
+                """(snapshotId) => {
+                  const snapshot = document.getElementById(snapshotId);
+                  if (snapshot) snapshot.remove();
+                }""",
+                snapshot_id,
+            )
+        except Exception:
+            pass
+
+
 async def _capture_special(page, wrapper, page_number: int, total: int, timeout_ms: int):
     parking = await _parking_wrapper(page, page_number, total)
     if await parking.count():
@@ -441,6 +560,7 @@ async def _capture_special(page, wrapper, page_number: int, total: int, timeout_
     await page.evaluate(
         """() => {
           window.__comixDraws = [];
+          window.__comixSnapshotCanvas = null;
           try { performance.clearResourceTimings(); } catch (_) {}
         }"""
     )
@@ -499,6 +619,15 @@ async def _capture_special(page, wrapper, page_number: int, total: int, timeout_
     if not chosen:
         raise DownloadError(f"Comix page {page_number} drawImage capture was not a coherent grid.")
 
+    # Prefer the page already reconstructed by Comix itself.  This avoids
+    # having to guess which of several concurrent wowpic resources belongs to
+    # the captured drawImage grid.
+    snapshot_png = await _capture_special_snapshot(page)
+    if snapshot_png:
+        return chosen, None, snapshot_png
+
+    # Fallback retained for environments where Chromium cannot capture the
+    # preserved canvas.
     entries = await page.evaluate(
         """() => performance.getEntriesByType('resource').map(e => ({
           name: e.name,
@@ -507,7 +636,7 @@ async def _capture_special(page, wrapper, page_number: int, total: int, timeout_
         }))"""
     )
     fetch_url = _select_special_fetch_url(entries)
-    return chosen, fetch_url
+    return chosen, fetch_url, None
 
 
 def download_comix_chapter(downloader, manga: Manga, chapter: Chapter, progress_callback=None) -> DownloadResult:
@@ -635,26 +764,43 @@ async def _download_comix_chapter_async(
                         raw = await image_response.body()
                         content_type = image_response.headers.get("content-type", "")
                     elif media_kind == "canvas":
-                        draws, special_url = await _capture_special(
+                        draws, special_url, snapshot_png = await _capture_special(
                             page, wrapper, page_number, total, timeout_ms
                         )
-                        image_response = await context.request.get(
-                            special_url,
-                            headers={
-                                "Referer": "https://comix.to/",
-                                "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-                            },
-                            timeout=timeout_ms,
-                        )
-                        if not image_response.ok:
-                            raise DownloadError(
-                                f"Comix scrambled image returned HTTP {image_response.status}"
+
+                        if snapshot_png:
+                            # Preferred path: Chromium captures the exact canvas
+                            # already reconstructed by the Comix reader.
+                            raw = snapshot_png
+                            content_type = "image/png"
+                        else:
+                            # Compatibility fallback: preserve the previous
+                            # wowpic + captured drawImage reconstruction.
+                            if not special_url:
+                                raise DownloadError(
+                                    f"Comix page {page_number} produced neither "
+                                    "a canvas snapshot nor a scrambled image URL."
+                                )
+
+                            image_response = await context.request.get(
+                                special_url,
+                                headers={
+                                    "Referer": "https://comix.to/",
+                                    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                                },
+                                timeout=timeout_ms,
                             )
-                        scrambled = await image_response.body()
-                        raw = await asyncio.to_thread(
-                            rebuild_scrambled_image, scrambled, draws
-                        )
-                        content_type = "image/png"
+                            if not image_response.ok:
+                                raise DownloadError(
+                                    f"Comix scrambled image returned HTTP "
+                                    f"{image_response.status}"
+                                )
+
+                            scrambled = await image_response.body()
+                            raw = await asyncio.to_thread(
+                                rebuild_scrambled_image, scrambled, draws
+                            )
+                            content_type = "image/png"
                     else:
                         raise DownloadError(
                             f"Unsupported Comix media element: {media_kind!r}"
