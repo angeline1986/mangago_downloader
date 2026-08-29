@@ -13,6 +13,57 @@ function applyTheme(theme){ document.documentElement.dataset.theme=theme; localS
 applyTheme(localStorage.getItem('mangago-theme')||'dark');
 $('#themeToggle').addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
 
+async function shutdownApplication(){
+  const button=$('#shutdownButton');
+  if(button.disabled)return;
+
+  button.disabled=true;
+  button.textContent='Finalizando…';
+  setBusy('Finalizando…');
+
+  try{
+    await api('/api/shutdown',{
+      method:'POST',
+      body:JSON.stringify({})
+    });
+
+    if(state.poller){
+      clearInterval(state.poller);
+      state.poller=null;
+    }
+
+    $('#globalStatus').textContent='Finalizado';
+    $('#footerState').textContent='Aplicação finalizada';
+    button.textContent='Finalizado';
+
+    toast('Aplicação finalizada.');
+
+    setTimeout(()=>{
+      window.close();
+
+      setTimeout(()=>{
+        if(!window.closed){
+          document.body.innerHTML=`
+            <div style="min-height:100vh;display:grid;place-items:center;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+              <div style="text-align:center">
+                <h2>Aplicação finalizada</h2>
+                <p>O servidor foi encerrado. Esta aba pode ser fechada.</p>
+              </div>
+            </div>
+          `;
+        }
+      },300);
+    },500);
+  }catch(e){
+    button.disabled=false;
+    button.textContent='Finalizar aplicação';
+    setBusy('Pronto');
+    toast(e.message);
+  }
+}
+
+$('#shutdownButton').addEventListener('click',shutdownApplication);
+
 $$('.mode-switch button').forEach(btn=>btn.addEventListener('click',()=>{ $$('.mode-switch button').forEach(x=>x.classList.remove('selected')); btn.classList.add('selected'); state.searchMode=btn.dataset.mode; $('#searchInput').placeholder=state.searchMode==='title'?'Digite o nome do mangá…':'Cole a URL do mangá no Mangago…'; $('#searchButton').textContent=state.searchMode==='title'?'Buscar':'Abrir'; }));
 
 $('#searchButton').addEventListener('click', runSearch); $('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch();});
@@ -266,7 +317,7 @@ async function loadComixChapters(){
 }
 
 async function startComixDownload(){
-  const folderPattern=$('#comixFolderPattern').value.trim()||'Ch.01';
+  const folderPattern=$('#comixFolderPattern').value.trim()||'Ch. 01';
 
   let chapters=[];
   let mangaUrl=$('#comixTitleUrl').value.trim();
@@ -366,7 +417,7 @@ async function startDownload(chapters){ if(!state.currentManga||!chapters.length
 
 async function refreshDownloads(){ try{state.jobs=await api('/api/downloads');renderDownloads();const active=state.jobs.filter(j=>['queued','running'].includes(j.state)).length;$('#downloadCount').textContent=state.jobs.length;$('#downloadBadge').textContent=active?active:'';if(active)startPolling();}catch(e){console.error(e);} }
 function renderDownloads(){const box=$('#downloadsContainer');if(!state.jobs.length){box.innerHTML='<div class="empty-card">Nenhum download iniciado nesta sessão.</div>';return;}box.innerHTML=state.jobs.map(job=>`<article class="download-card"><div class="download-top"><div><h3>${esc(job.manga.title)}</h3><p>${esc(job.message||'')}</p></div><span class="download-state">${stateLabel(job.state)}</span></div><div class="progress-track"><div class="progress-fill" style="width:${job.progress||0}%"></div></div><div class="progress-meta"><span>${job.completed}/${job.total} capítulos</span><span>${job.progress||0}%</span></div><div class="queue">${(job.chapters||[]).map(r=>`<div class="queue-row"><b>Ch. ${fmt(r.number)}</b><span>${esc(r.title||'')}</span><span class="queue-status ${r.status}">${esc(pdfText(r))}</span>${pdfAction(job,r)}</div>`).join('')}</div></article>`).join('');$$('.pdf-action').forEach(btn=>btn.addEventListener('click',()=>generatePdf(btn.dataset.job,btn.dataset.chapter,btn.dataset.regenerate==='1')));}
-function pdfText(row){if(row.status==='completed'&&row.pdf_status==='failed')return 'Download concluído · Falha ao gerar PDF';if(row.status==='completed'&&row.pdf_message)return `Download concluído · ${row.pdf_message}`;return row.message||row.status;}
+function pdfText(row){const base=row.message||row.status;if(row.status==='completed'&&row.pdf_status==='failed')return `${base} · Falha ao gerar PDF`;if(row.status==='completed'&&row.pdf_message)return `${base} · ${row.pdf_message}`;return base;}
 function pdfAction(job,row){if(row.status!=='completed'||!row.file_path||!(row.images_downloaded>0))return '';const done=row.pdf_status==='generated'||row.pdf_status==='existing';const failed=row.pdf_status==='failed';return `<button class="ghost pdf-action" data-job="${escAttr(job.id)}" data-chapter="${escAttr(row.url)}" data-regenerate="${done?'1':'0'}">${done?'Gerar novamente':failed?'Tentar novamente':'Gerar PDF'}</button>`;}
 async function generatePdf(jobId,chapterUrl,regenerate=false){setBusy('Gerando PDF…');try{await api('/api/pdf',{method:'POST',body:JSON.stringify({job_id:jobId,chapter_url:chapterUrl,regenerate})});toast('PDF gerado');await refreshDownloads();}catch(e){toast(e.message);await refreshDownloads();}finally{setBusy('Pronto');}}
 function startPolling(){if(state.poller)return;state.poller=setInterval(async()=>{await refreshDownloads();if(!state.jobs.some(j=>['queued','running'].includes(j.state))){clearInterval(state.poller);state.poller=null;}},1000);}

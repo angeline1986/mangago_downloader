@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .pdf.generator import generate_pdf_from_images
+from .output_paths import chapter_cbz_path, chapter_pdf_path
 
 
 def convert_to_pdf(
@@ -28,9 +29,9 @@ def convert_to_pdf(
         image_files.sort()
         
         if not output_path:
-            chapter_name = os.path.basename(chapter_dir)
-            output_path = os.path.join(chapter_dir, f"{chapter_name}.pdf")
-        
+            output_path = str(chapter_pdf_path(chapter_dir))
+
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         generate_pdf_from_images(image_files, output_path)
         
         if delete_images:
@@ -63,9 +64,9 @@ def convert_to_cbz(
         image_files.sort()
         
         if not output_path:
-            chapter_name = os.path.basename(chapter_dir)
-            output_path = os.path.join(chapter_dir, f"{chapter_name}.cbz")
-        
+            output_path = str(chapter_cbz_path(chapter_dir))
+
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for image_file in image_files:
                 arcname = os.path.basename(image_file)
@@ -95,11 +96,23 @@ def convert_manga_chapters(
     created_files = []
     
     try:
-        chapter_dirs = [os.path.join(manga_dir, item) for item in os.listdir(manga_dir) if os.path.isdir(os.path.join(manga_dir, item))]
+        # Current layout:
+        #   <manga>/IMG/<chapter>/page-NNN.ext
+        #
+        # Keep compatibility with legacy manga directories where chapter
+        # folders lived directly below <manga>.
+        image_root = os.path.join(manga_dir, "IMG")
+        chapters_root = image_root if os.path.isdir(image_root) else manga_dir
+
+        chapter_dirs = [
+            os.path.join(chapters_root, item)
+            for item in os.listdir(chapters_root)
+            if os.path.isdir(os.path.join(chapters_root, item))
+        ]
     except FileNotFoundError:
         print(f"Error: Manga directory not found at {manga_dir}")
         return []
-    
+
     chapter_dirs.sort()
     
     for chapter_dir in chapter_dirs:

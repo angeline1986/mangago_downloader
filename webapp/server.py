@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 from gui.config import ConfigManager, DEFAULT_OUTPUT_DIR
 from src.converter import _get_image_files, convert_to_cbz, convert_to_pdf
+from src.output_paths import chapter_pdf_path
 from src.downloader import ChapterDownloader, discover_chapter_reader_pages_with_cookies, get_chapter_list
 from src.comix_provider import discover_comix_chapters, is_comix_chapter_url, is_comix_title_url
 from src.models import Chapter, Manga
@@ -134,7 +135,7 @@ def _generate_pdf_for_chapter(
     if not _get_image_files(str(chapter_dir)):
         return 409, {"error": "Nenhuma imagem encontrada para gerar PDF."}
 
-    pdf_path = chapter_dir / f"{chapter_dir.name}.pdf"
+    pdf_path = chapter_pdf_path(chapter_dir)
     if pdf_path.exists() and not regenerate:
         _update_chapter_row(job_id, chapter_url, pdf_path=str(pdf_path), pdf_status="existing", pdf_message="PDF já existe")
         return 409, {"error": "PDF já existente.", "pdf_path": str(pdf_path), "already_exists": True}
@@ -250,12 +251,22 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
                             convert_to_pdf(result.file_path, delete_images=bool(settings.get("delete_images", False)))
                         else:
                             convert_to_cbz(result.file_path, delete_images=bool(settings.get("delete_images", False)))
+                    validation = getattr(result, "validation", None)
+
+                    if validation and validation.valid:
+                        completed_message = (
+                            f"Concluído · {validation.valid_pages}/"
+                            f"{validation.expected_pages} páginas validadas"
+                        )
+                    else:
+                        completed_message = "Concluído"
+
                     _update_chapter_row(
                         job_id,
                         chapter.url,
                         status="completed",
                         progress=100,
-                        message="Concluído",
+                        message=completed_message,
                         file_path=result.file_path or "",
                         images_downloaded=result.images_downloaded,
                     )
@@ -464,6 +475,40 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                 }
             threading.Thread(target=_run_download, args=(job_id, manga, chapters, settings), daemon=True).start()
             self._json({"job_id": job_id}, 202)
+            return
+
+        if path == "/api/shutdown":
+            with _jobs_lock:
+                active_jobs = [
+                    job
+                    for job in _jobs.values()
+                    if job.get("state") in {"queued", "running"}
+                ]
+
+            if active_jobs:
+                self._json(
+                    {
+                        "error": (
+                            "Há download em andamento. "
+                            "Aguarde a conclusão antes de finalizar a aplicação."
+                        )
+                    },
+                    409,
+                )
+                return
+
+            self._json(
+                {
+                    "ok": True,
+                    "message": "Aplicação finalizada.",
+                }
+            )
+
+            threading.Thread(
+                target=self.server.shutdown,
+                name="web-shutdown",
+                daemon=True,
+            ).start()
             return
 
         if path == "/api/pdf":

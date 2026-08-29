@@ -188,10 +188,22 @@ def main():
                 failed = [r for r in results if not r.success]
                 
                 console.print(f"\n[bold green]Successfully downloaded {len(successful)} chapters[/bold green]")
+                for res in successful:
+                    validation = getattr(res, "validation", None)
+                    if validation and validation.valid:
+                        console.print(
+                            f"[green]  ✓ Chapter {res.chapter.number}: "
+                            f"{validation.valid_pages}/{validation.expected_pages} "
+                            "páginas validadas[/green]"
+                        )
+
                 if failed:
                     console.print(f"[yellow]Failed to download {len(failed)} chapters[/yellow]")
                     for res in failed:
-                        console.print(f"[red]  - Chapter {res.chapter.number}: {res.error_message}[/red]")
+                        console.print(
+                            f"[red]  - Chapter {res.chapter.number}: "
+                            f"{res.error_message or 'Falha no download'}[/red]"
+                        )
             
             if format_choice in ["pdf", "cbz"] and successful:
                 console.print(f"\n[bold blue]Converting to {format_choice.upper()}...[/bold blue]")

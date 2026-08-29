@@ -117,6 +117,57 @@ class WebV2ContractTests(unittest.TestCase):
         )
         self.assertEqual(payload["chapters"], fake_chapters)
 
+    def test_shutdown_rejects_when_job_is_active(self):
+        job_id = "job-shutdown-active"
+
+        with server._jobs_lock:
+            server._jobs[job_id] = {
+                "id": job_id,
+                "state": "running",
+            }
+
+        try:
+            with patch.object(self.httpd, "shutdown") as shutdown:
+                status, data = self.request(
+                    "POST",
+                    "/api/shutdown",
+                    {},
+                )
+
+                self.assertEqual(status, 409)
+                self.assertIn("download em andamento", data["error"])
+                shutdown.assert_not_called()
+        finally:
+            with server._jobs_lock:
+                server._jobs.pop(job_id, None)
+
+    def test_shutdown_succeeds_without_active_jobs(self):
+        with server._jobs_lock:
+            previous_jobs = dict(server._jobs)
+            server._jobs.clear()
+
+        try:
+            shutdown_called = threading.Event()
+
+            def fake_shutdown():
+                shutdown_called.set()
+
+            with patch.object(self.httpd, "shutdown", side_effect=fake_shutdown):
+                status, data = self.request(
+                    "POST",
+                    "/api/shutdown",
+                    {},
+                )
+
+                self.assertEqual(status, 200)
+                self.assertTrue(data["ok"])
+                self.assertEqual(data["message"], "Aplicação finalizada.")
+                self.assertTrue(shutdown_called.wait(timeout=1))
+        finally:
+            with server._jobs_lock:
+                server._jobs.clear()
+                server._jobs.update(previous_jobs)
+
     def test_health_and_local_web_shell(self):
         status, data = self.request('GET', '/api/health')
         self.assertEqual(status, 200)

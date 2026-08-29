@@ -18,6 +18,8 @@ from PIL import Image, UnidentifiedImageError
 from .browser import browser_page
 from .comix_provider import download_comix_chapter, is_comix_chapter_url
 from .models import Chapter, Manga, DownloadResult
+from .chapter_validation import validate_chapter_images
+from .output_paths import chapter_image_dir
 from .utils import SessionManager, ParsingError, DownloadError, create_directory, sanitize_filename
 
 IMAGE_HOST_HINTS = ("mangapicgallery.com", "mangago", "youhim")
@@ -285,6 +287,71 @@ def get_chapter_list(source: Union[str, object]) -> List[Chapter]:
 class ChapterDownloader:
     """Download chapter images with validation and optional lossless PNG conversion."""
 
+
+    def _finalize_download_result(
+        self,
+        result: DownloadResult,
+        expected_pages: int | None = None,
+    ) -> DownloadResult:
+        """Validate the saved chapter before treating the download as complete."""
+        expected = (
+            int(expected_pages)
+            if expected_pages is not None
+            else int(result.expected_pages or 0)
+        )
+
+        result.expected_pages = expected
+
+        if not result.file_path or expected <= 0:
+            return result
+
+        validation = validate_chapter_images(
+            result.file_path,
+            expected_pages=expected,
+        )
+        result.validation = validation
+
+        if not validation.valid:
+            result.success = False
+
+            details = []
+
+            if validation.missing_pages:
+                details.append(
+                    "missing pages: "
+                    + ", ".join(map(str, validation.missing_pages))
+                )
+
+            if validation.invalid_pages:
+                details.append(
+                    "invalid pages: "
+                    + ", ".join(map(str, validation.invalid_pages))
+                )
+
+            if validation.duplicate_pages:
+                details.append(
+                    "duplicate pages: "
+                    + ", ".join(map(str, validation.duplicate_pages))
+                )
+
+            if validation.found_pages != validation.expected_pages:
+                details.append(
+                    f"found {validation.found_pages}/"
+                    f"{validation.expected_pages} pages"
+                )
+
+            message = "Chapter structural validation failed"
+            if details:
+                message += ": " + "; ".join(details)
+
+            if result.error_message:
+                result.error_message += f" | {message}"
+            else:
+                result.error_message = message
+
+        return result
+
+
     def __init__(
         self,
         max_workers: int = 5,
@@ -353,8 +420,14 @@ class ChapterDownloader:
         if not page_urls:
             return DownloadResult(chapter=chapter, success=False, error_message="No reader pages found.")
 
-        manga_dir = os.path.join(self.download_dir, "mangago", sanitize_filename(manga.title))
-        chapter_dir = os.path.join(manga_dir, _chapter_dir_name(chapter))
+        chapter_dir = str(
+            chapter_image_dir(
+                self.download_dir,
+                "mangago",
+                sanitize_filename(manga.title),
+                _chapter_dir_name(chapter),
+            )
+        )
         create_directory(chapter_dir)
         originals_dir = os.path.join(chapter_dir, "originais")
         if self.keep_originals and self.image_format == "png":
@@ -535,12 +608,17 @@ class ChapterDownloader:
                 await browser.close()
 
         success = downloaded == len(page_urls)
-        return DownloadResult(
+        result = DownloadResult(
             chapter=chapter,
             success=success,
             file_path=chapter_dir,
             images_downloaded=downloaded,
+            expected_pages=len(page_urls),
             error_message=None if success else "; ".join(failures[:5]),
+        )
+        return self._finalize_download_result(
+            result,
+            expected_pages=len(page_urls),
         )
 
     def download_chapter(self, manga: Manga, chapter: Chapter, progress_callback=None) -> DownloadResult:
@@ -562,8 +640,14 @@ class ChapterDownloader:
         if not chapter.image_urls:
             return DownloadResult(chapter=chapter, success=False, error_message="No image URLs found.")
 
-        manga_dir = os.path.join(self.download_dir, "mangago", sanitize_filename(manga.title))
-        chapter_dir = os.path.join(manga_dir, _chapter_dir_name(chapter))
+        chapter_dir = str(
+            chapter_image_dir(
+                self.download_dir,
+                "mangago",
+                sanitize_filename(manga.title),
+                _chapter_dir_name(chapter),
+            )
+        )
         create_directory(chapter_dir)
         originals_dir = os.path.join(chapter_dir, "originais")
         if self.keep_originals and self.image_format == "png":
@@ -606,12 +690,17 @@ class ChapterDownloader:
 
         downloaded = total - len(failures)
         success = downloaded == total
-        return DownloadResult(
+        result = DownloadResult(
             chapter=chapter,
             success=success,
             file_path=chapter_dir,
             images_downloaded=downloaded,
+            expected_pages=total,
             error_message=None if success else "; ".join(failures[:5]),
+        )
+        return self._finalize_download_result(
+            result,
+            expected_pages=total,
         )
 
     def download_chapters(self, manga: Manga, chapters: List[Chapter], result_callback=None) -> List[DownloadResult]:

@@ -17,6 +17,7 @@ from urllib.parse import urljoin, urlparse
 from PIL import Image
 
 from .models import DownloadResult, Manga, Chapter
+from .output_paths import chapter_image_dir
 from .utils import DownloadError, ParsingError, create_directory, sanitize_filename
 from .browser import DEFAULT_USER_AGENT
 
@@ -671,9 +672,8 @@ async def _download_comix_chapter_async(
     page_delay = max(0.0, float(getattr(downloader, "page_delay", 0.0)))
     callback = progress_callback or getattr(downloader, "progress_callback", None)
 
-    manga_dir = f"{downloader.download_dir}/comix/{sanitize_filename(manga.title)}"
 
-    pattern = (getattr(chapter, "folder_pattern", None) or "Ch.01").strip()
+    pattern = (getattr(chapter, "folder_pattern", None) or "Ch. 01").strip()
     number = chapter.number
     number_text = f"{number:g}"
 
@@ -689,7 +689,14 @@ async def _download_comix_chapter_async(
     else:
         folder_name = f"Ch.{number_text}"
 
-    chapter_dir = f"{manga_dir}/{sanitize_filename(folder_name)}"
+    chapter_dir = str(
+        chapter_image_dir(
+            downloader.download_dir,
+            "comix",
+            sanitize_filename(manga.title),
+            sanitize_filename(folder_name),
+        )
+    )
     create_directory(chapter_dir)
     originals_dir = f"{chapter_dir}/originais"
     if getattr(downloader, "keep_originals", False) and getattr(downloader, "image_format", "original") == "png":
@@ -828,10 +835,15 @@ async def _download_comix_chapter_async(
             await browser.close()
 
     success = downloaded == len(ordered)
-    return DownloadResult(
+    result = DownloadResult(
         chapter=chapter,
         success=success,
         file_path=chapter_dir,
         images_downloaded=downloaded,
+        expected_pages=len(ordered),
         error_message=None if success else "; ".join(failures[:5]),
+    )
+    return downloader._finalize_download_result(
+        result,
+        expected_pages=len(ordered),
     )

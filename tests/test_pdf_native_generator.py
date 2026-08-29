@@ -106,6 +106,42 @@ class NativePdfGeneratorTests(unittest.TestCase):
             self.assertTrue((manga_dir / "Ch. 1" / "Ch. 1.pdf").exists())
             self.assertTrue((manga_dir / "Ch. 2" / "Ch. 2.pdf").exists())
 
+    def test_convert_manga_chapters_supports_img_pdf_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manga_dir = Path(tmp) / "Manga"
+
+            for chapter in ("Ch. 1", "Ch. 2"):
+                chapter_dir = manga_dir / "IMG" / chapter
+                chapter_dir.mkdir(parents=True)
+                write_image(chapter_dir / "page-001.jpg")
+
+            with patch(
+                "src.pdf.generator.img2pdf.convert",
+                return_value=b"%PDF-1.4\n",
+            ):
+                created = convert_manga_chapters(
+                    str(manga_dir),
+                    format="pdf",
+                )
+
+            self.assertEqual(
+                [Path(path).name for path in created],
+                ["Ch. 1.pdf", "Ch. 2.pdf"],
+            )
+            self.assertTrue(
+                (manga_dir / "PDF" / "Ch. 1" / "Ch. 1.pdf").exists()
+            )
+            self.assertTrue(
+                (manga_dir / "PDF" / "Ch. 2" / "Ch. 2.pdf").exists()
+            )
+
+            self.assertFalse(
+                (manga_dir / "IMG" / "Ch. 1" / "Ch. 1.pdf").exists()
+            )
+            self.assertFalse(
+                (manga_dir / "IMG" / "Ch. 2" / "Ch. 2.pdf").exists()
+            )
+
     def test_pdf_modules_do_not_depend_on_gera_pdf_input_or_output(self):
         root = Path(__file__).resolve().parents[1] / "src" / "pdf"
         text = "\n".join(path.read_text(encoding="utf-8") for path in root.glob("*.py"))

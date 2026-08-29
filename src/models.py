@@ -2,7 +2,11 @@
 Data models for the Mangago Downloader.
 """
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from .chapter_validation import ChapterValidationResult
 
 
 @dataclass
@@ -81,6 +85,8 @@ class DownloadResult:
     file_path: Optional[str] = None
     error_message: Optional[str] = None
     images_downloaded: int = 0
+    expected_pages: int = 0
+    validation: Optional["ChapterValidationResult"] = None
     
     def __str__(self) -> str:
         """

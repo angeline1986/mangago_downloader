@@ -18,6 +18,14 @@
       </div>
       <div class="top-actions">
         <span class="status"><i></i><span id="globalStatus">Pronto</span></span>
+        <button
+          class="shutdown-button"
+          id="shutdownButton"
+          type="button"
+          title="Finalizar aplicação"
+        >
+          Finalizar aplicação
+        </button>
         <button class="icon-button" id="themeToggle" title="Alternar tema" aria-label="Alternar tema">☾</button>
       </div>
     </header>
@@ -162,13 +170,13 @@
 
               <div class="field-group">
                 <label for="comixFolderPattern">Padrão das pastas</label>
-                <small>Exemplos: Ch.01, Ch.1, 01 ou 1.</small>
+                <small>Exemplos: Ch. 01, Ch. 1, 01 ou 1.</small>
                 <input
                   class="setting-control wide"
                   id="comixFolderPattern"
                   type="text"
-                  value="Ch.01"
-                  placeholder="Ch.01"
+                  value="Ch. 01"
+                  placeholder="Ch. 01"
                   autocomplete="off"
                 />
               </div>
