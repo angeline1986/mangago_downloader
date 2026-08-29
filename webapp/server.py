@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 from gui.config import ConfigManager, DEFAULT_OUTPUT_DIR
 from src.converter import _get_image_files, convert_to_cbz, convert_to_pdf
 from src.downloader import ChapterDownloader, discover_chapter_reader_pages_with_cookies, get_chapter_list
+from src.comix_provider import discover_comix_chapters, is_comix_chapter_url, is_comix_title_url
 from src.models import Chapter, Manga
 from src.search import get_manga_details, search_manga
 
@@ -175,6 +176,27 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
             _update_job(job_id, phase="locating", message=f"Localizando páginas do capítulo {chapter.number:g}…")
             _update_chapter_row(job_id, chapter.url, status="locating", message="Localizando páginas", progress=0)
             try:
+                if is_comix_chapter_url(chapter.url):
+                    # Comix discovers its structural pages inside the provider itself.
+                    # Do not send this URL through the Mangago-specific discovery path.
+                    chapter.image_urls = [chapter.url]
+                    valid_chapters.append(chapter)
+                    _update_chapter_row(
+                        job_id,
+                        chapter.url,
+                        status="queued",
+                        message="Leitor Comix identificado",
+                        total_pages=0,
+                        progress=0,
+                    )
+                    web_logger.info(
+                        "[JOB %s] Comix Ch.%s identificado | url=%s",
+                        job_id[:8],
+                        chapter.number,
+                        chapter.url,
+                    )
+                    continue
+
                 web_logger.info(
                     "[JOB %s] discovery Ch.%s iniciado | url=%s | workers=%s | timeout=%ss",
                     job_id[:8], chapter.number, chapter.url, workers, int(settings.get("timeout", 30)),
@@ -190,7 +212,13 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
                     job_id[:8], chapter.number, len(chapter.image_urls),
                 )
                 valid_chapters.append(chapter)
-                _update_chapter_row(job_id, chapter.url, status="queued", message=f"{len(chapter.image_urls)} páginas encontradas", total_pages=len(chapter.image_urls))
+                _update_chapter_row(
+                    job_id,
+                    chapter.url,
+                    status="queued",
+                    message=f"{len(chapter.image_urls)} páginas encontradas",
+                    total_pages=len(chapter.image_urls),
+                )
             except Exception as exc:
                 web_logger.exception("[JOB %s] discovery Ch.%s falhou: %s", job_id[:8], chapter.number, exc)
                 failed += 1
@@ -357,6 +385,46 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                 self._json({"error": str(exc)}, 502)
             return
 
+        if path == "/api/comix/chapters":
+            url = str(payload.get("url") or "").strip()
+
+            if not is_comix_title_url(url):
+                self._json(
+                    {"error": "Informe uma URL válida de obra do Comix."},
+                    400,
+                )
+                return
+
+            try:
+                settings = _config.get_all()
+                timeout = int(settings.get("timeout", 30))
+
+                chapters = discover_comix_chapters(
+                    url,
+                    timeout=timeout,
+                )
+
+                sources = sorted(
+                    {
+                        str(item.get("source") or "").strip()
+                        for item in chapters
+                        if item.get("source")
+                    },
+                    key=str.lower,
+                )
+
+                self._json(
+                    {
+                        "url": url,
+                        "sources": sources,
+                        "chapters": chapters,
+                    }
+                )
+            except Exception as exc:
+                self._json({"error": str(exc)}, 502)
+
+            return
+
         if path == "/api/downloads":
             manga_payload = payload.get("manga") or {}
             chapter_payloads = payload.get("chapters") or []
@@ -368,8 +436,16 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                 author=str(manga_payload.get("author") or ""), genres=list(manga_payload.get("genres") or []),
                 cover_image_url=str(manga_payload.get("cover_image_url") or ""), summary=str(manga_payload.get("summary") or ""),
             )
-            chapters = [Chapter(number=float(item["number"]), url=str(item["url"]), title=str(item.get("title") or ""))
-                        for item in chapter_payloads if item.get("url") and item.get("number") is not None]
+            chapters = [
+                Chapter(
+                    number=float(item["number"]),
+                    url=str(item["url"]),
+                    title=str(item.get("title") or ""),
+                    folder_pattern=str(item.get("folder_pattern") or "").strip() or None,
+                )
+                for item in chapter_payloads
+                if item.get("url") and item.get("number") is not None
+            ]
             if not chapters:
                 self._json({"error": "Nenhum capítulo válido foi informado."}, 400)
                 return

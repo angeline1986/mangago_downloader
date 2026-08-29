@@ -27,6 +27,7 @@
       <nav>
         <button class="nav-item active" data-page="search"><span>⌕</span> Buscar</button>
         <button class="nav-item" data-page="manga" id="mangaNav" disabled><span>▣</span> Mangá</button>
+        <button class="nav-item" data-page="comix"><span>◫</span> Comix</button>
         <button class="nav-item" data-page="downloads"><span>↓</span> Downloads <em id="downloadBadge"></em></button>
         <button class="nav-item" data-page="settings"><span>⚙</span> Ajustes</button>
       </nav>
@@ -68,6 +69,123 @@
         </div>
       </section>
 
+      <section class="page" id="page-comix">
+        <div class="page-heading">
+          <h1>Comix Downloader</h1>
+          <p>Informe a URL da obra para carregar automaticamente os capítulos disponíveis por fonte.</p>
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-card-head">
+            <h2>Carregar capítulos</h2>
+            <p>Exemplo: https://comix.to/title/0kgln-emergency-youth-record-book</p>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <strong>URL da obra</strong>
+              <small>Use a página principal da obra no Comix, sem URL de capítulo.</small>
+            </div>
+            <div class="comix-load-row">
+              <input
+                class="setting-control wide"
+                id="comixTitleUrl"
+                type="url"
+                placeholder="https://comix.to/title/..."
+                autocomplete="off"
+              />
+              <button class="secondary" id="comixLoadButton">Carregar capítulos</button>
+            </div>
+          </div>
+
+          <div class="setting-row comix-discovery-row hidden" id="comixDiscoveryControls">
+            <div>
+              <strong>Fonte</strong>
+              <small>Escolha qual versão da obra deseja baixar.</small>
+            </div>
+            <select class="setting-control wide" id="comixSource"></select>
+          </div>
+
+          <div class="comix-discovery hidden" id="comixDiscovery">
+            <div class="section-title-row chapters-heading">
+              <div>
+                <h2>Capítulos encontrados</h2>
+                <span class="muted" id="comixChapterCount">0 capítulos</span>
+              </div>
+              <div class="chapter-actions">
+                <button class="secondary" id="comixSelectAll">Todos</button>
+                <button class="secondary" id="comixSelectNone">Nenhum</button>
+              </div>
+            </div>
+
+            <div class="table-card chapter-table-card">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="check-col"></th>
+                    <th>Capítulo</th>
+                    <th>Fonte</th>
+                  </tr>
+                </thead>
+                <tbody id="comixChapterTable"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <strong>Nome da obra</strong>
+              <small>Opcional. Se ficar vazio, o nome será derivado da URL.</small>
+            </div>
+            <input
+              class="setting-control wide"
+              id="comixTitle"
+              type="text"
+              placeholder="Nome da obra"
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <strong>Padrão das pastas</strong>
+              <small>Exemplos: Ch.01, Ch.1, 01 ou 1.</small>
+            </div>
+            <input
+              class="setting-control wide"
+              id="comixFolderPattern"
+              type="text"
+              value="Ch.01"
+              placeholder="Ch.01"
+              autocomplete="off"
+            />
+          </div>
+
+          <details class="comix-advanced">
+            <summary>Avançado — URLs diretas</summary>
+
+            <div class="setting-row comix-urls-row">
+              <div>
+                <strong>URLs dos capítulos</strong>
+                <small>Fallback manual: uma URL direta de capítulo por linha.</small>
+              </div>
+              <textarea
+                class="setting-control wide"
+                id="comixUrl"
+                rows="6"
+                placeholder="https://comix.to/title/.../chapter-1&#10;https://comix.to/title/.../chapter-2"
+                autocomplete="off"
+              ></textarea>
+              <small class="muted comix-url-count" id="comixUrlCount">0 capítulos reconhecidos</small>
+            </div>
+          </details>
+
+          <div class="sticky-actions">
+            <span class="muted" id="comixSelectedCount">Nenhum capítulo selecionado.</span>
+            <button class="primary" id="comixDownloadButton">Baixar capítulos</button>
+          </div>
+        </div>
+      </section>
       <section class="page" id="page-manga">
         <div class="manga-hero">
           <div class="cover-shell"><img id="mangaCover" alt="Capa" /></div>

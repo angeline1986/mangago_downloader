@@ -104,7 +104,7 @@ class DownloaderCoreTests(unittest.TestCase):
             chapter = Chapter(number=1, url="https://www.mangago.me/read-manga/example/uu/to_chapter-1/pg-1/", image_urls=["https://iweb_1.mangapicgallery.com/a.jpg"])
             result = downloader.download_chapter(manga, chapter)
             self.assertTrue(result.success)
-            chapter_dir = Path(tmp) / "Emergency Youth Record Book" / "Ch. 1"
+            chapter_dir = Path(tmp) / "mangago" / "Emergency Youth Record Book" / "Ch. 1"
             self.assertEqual(Path(result.file_path), chapter_dir)
             self.assertTrue(chapter_dir.is_dir())
             self.assertTrue((chapter_dir / "page-001.jpg").exists())
@@ -122,7 +122,7 @@ class DownloaderCoreTests(unittest.TestCase):
             chapter = Chapter(number=2, url="https://www.mangago.me/read-manga/example/uu/to_chapter-2/pg-1/", image_urls=["https://iweb_1.mangapicgallery.com/a.jpg"])
             result = downloader.download_chapter(manga, chapter)
             self.assertTrue(result.success)
-            self.assertTrue((Path(tmp) / "Bad__Name____" / "Ch. 2").is_dir())
+            self.assertTrue((Path(tmp) / "mangago" / "Bad__Name____" / "Ch. 2").is_dir())
 
 
 if __name__ == "__main__":

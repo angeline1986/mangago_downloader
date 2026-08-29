@@ -1,5 +1,8 @@
 import io
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 
@@ -8,7 +11,9 @@ from src.comix_provider import (
     _select_special_fetch_url,
     _validate_draw_tiles,
     is_comix_chapter_url,
+    is_comix_title_url,
     rebuild_scrambled_image,
+    download_comix_chapter,
 )
 
 
@@ -21,6 +26,60 @@ class ComixProviderTests(unittest.TestCase):
         )
         self.assertFalse(is_comix_chapter_url("https://comix.to/title/0kgln-emergency-youth-record-book"))
         self.assertFalse(is_comix_chapter_url("https://www.mangago.me/read-manga/test/"))
+
+    def test_parse_comix_chapter_rows_deduplicates_and_sorts_by_url(self):
+        from src.comix_provider import _parse_comix_chapter_rows
+
+        rows = [
+            {
+                "url": "/title/test/111-chapter-2",
+                "title": "Ch.2",
+                "source": "TappyToon",
+            },
+            {
+                "url": "/title/test/110-chapter-1",
+                "title": "Ch.1",
+                "source": "TappyToon",
+            },
+            {
+                "url": "/title/test/111-chapter-2",
+                "title": "Duplicado",
+                "source": "TappyToon",
+            },
+        ]
+
+        chapters = _parse_comix_chapter_rows(
+            rows,
+            "https://comix.to/title/test",
+        )
+
+        self.assertEqual([item["number"] for item in chapters], [1.0, 2.0])
+        self.assertEqual(len(chapters), 2)
+        self.assertEqual(chapters[0]["source"], "TappyToon")
+        self.assertEqual(
+            chapters[0]["url"],
+            "https://comix.to/title/test/110-chapter-1",
+        )
+
+    def test_comix_title_url_detection(self):
+        self.assertTrue(
+            is_comix_title_url(
+                "https://comix.to/title/0kgln-emergency-youth-record-book"
+            )
+        )
+        self.assertTrue(
+            is_comix_title_url(
+                "https://www.comix.to/title/0kgln-emergency-youth-record-book/"
+            )
+        )
+        self.assertFalse(
+            is_comix_title_url(
+                "https://comix.to/title/0kgln-emergency-youth-record-book/11256940-chapter-2"
+            )
+        )
+        self.assertFalse(
+            is_comix_title_url("https://www.mangago.me/read-manga/test/")
+        )
 
     def test_grid_validation_is_dynamic(self):
         draws = []
@@ -53,6 +112,38 @@ class ComixProviderTests(unittest.TestCase):
             self.assertEqual((0, 0, 255), out.getpixel((15, 5)))
             self.assertEqual((0, 255, 0), out.getpixel((5, 15)))
             self.assertEqual((255, 0, 0), out.getpixel((15, 15)))
+
+    def test_comix_download_uses_comix_provider_subfolder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            downloader = SimpleNamespace(download_dir=tmp)
+
+            manga = SimpleNamespace(title="Emergency Youth Record Book")
+            chapter = SimpleNamespace(
+                number=2,
+                url="https://comix.to/title/test/123-chapter-2",
+                image_urls=[],
+            )
+
+            import src.comix_provider as provider
+
+            expected = Path(tmp) / "comix" / "Emergency Youth Record Book" / "Ch. 2"
+
+            original_async = provider._download_comix_chapter_async
+            try:
+                async def fake_download(*args, **kwargs):
+                    return provider.DownloadResult(
+                        success=True,
+                        chapter=chapter,
+                        file_path=str(expected),
+                        error_message=None,
+                    )
+
+                provider._download_comix_chapter_async = fake_download
+                result = download_comix_chapter(downloader, manga, chapter)
+            finally:
+                provider._download_comix_chapter_async = original_async
+
+            self.assertEqual(Path(result.file_path), expected)
 
     def test_special_fetch_selection_uses_latest_fetch_wowpic_with_query(self):
         entries = [

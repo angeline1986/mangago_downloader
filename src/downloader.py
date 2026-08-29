@@ -353,7 +353,7 @@ class ChapterDownloader:
         if not page_urls:
             return DownloadResult(chapter=chapter, success=False, error_message="No reader pages found.")
 
-        manga_dir = os.path.join(self.download_dir, sanitize_filename(manga.title))
+        manga_dir = os.path.join(self.download_dir, "mangago", sanitize_filename(manga.title))
         chapter_dir = os.path.join(manga_dir, _chapter_dir_name(chapter))
         create_directory(chapter_dir)
         originals_dir = os.path.join(chapter_dir, "originais")
@@ -562,7 +562,7 @@ class ChapterDownloader:
         if not chapter.image_urls:
             return DownloadResult(chapter=chapter, success=False, error_message="No image URLs found.")
 
-        manga_dir = os.path.join(self.download_dir, sanitize_filename(manga.title))
+        manga_dir = os.path.join(self.download_dir, "mangago", sanitize_filename(manga.title))
         chapter_dir = os.path.join(manga_dir, _chapter_dir_name(chapter))
         create_directory(chapter_dir)
         originals_dir = os.path.join(chapter_dir, "originais")

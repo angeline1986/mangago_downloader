@@ -39,6 +39,7 @@ class Chapter:
     url: str
     title: Optional[str] = None
     image_urls: List[str] = field(default_factory=list)
+    folder_pattern: Optional[str] = None
     
     def __str__(self) -> str:
         """

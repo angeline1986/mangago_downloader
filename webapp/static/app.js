@@ -16,6 +16,296 @@ $('#themeToggle').addEventListener('click',()=>applyTheme(document.documentEleme
 $$('.mode-switch button').forEach(btn=>btn.addEventListener('click',()=>{ $$('.mode-switch button').forEach(x=>x.classList.remove('selected')); btn.classList.add('selected'); state.searchMode=btn.dataset.mode; $('#searchInput').placeholder=state.searchMode==='title'?'Digite o nome do mangá…':'Cole a URL do mangá no Mangago…'; $('#searchButton').textContent=state.searchMode==='title'?'Buscar':'Abrir'; }));
 
 $('#searchButton').addEventListener('click', runSearch); $('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch();});
+const comixState = {
+  chapters: [],
+  selected: new Set(),
+  source: ''
+};
+
+$('#comixDownloadButton').addEventListener('click', startComixDownload);
+$('#comixLoadButton').addEventListener('click', loadComixChapters);
+$('#comixSelectAll').addEventListener('click', () => {
+  visibleComixChapters().forEach(ch => comixState.selected.add(ch.url));
+  renderComixChapters();
+});
+$('#comixSelectNone').addEventListener('click', () => {
+  visibleComixChapters().forEach(ch => comixState.selected.delete(ch.url));
+  renderComixChapters();
+});
+$('#comixSource').addEventListener('change', () => {
+  comixState.source = $('#comixSource').value;
+  comixState.selected.clear();
+  visibleComixChapters().forEach(ch => comixState.selected.add(ch.url));
+  renderComixChapters();
+});
+
+function comixChapterNumber(url){
+  const m=String(url||'').match(/chapter-([0-9]+(?:\.[0-9]+)?)(?:[/?#]|$)/i);
+  return m?Number(m[1]):null;
+}
+
+function comixTitleFromUrl(url){
+  try{
+    const u=new URL(url);
+    const slug=(u.pathname.match(/\/title\/([^/]+)/i)||[])[1]||'';
+    const parts=slug.split('-').filter(Boolean);
+    if(parts.length>1)parts.shift();
+    const title=parts.join(' ').replace(/\b\w/g,c=>c.toUpperCase());
+    return title||'Comix';
+  }catch{
+    return 'Comix';
+  }
+}
+
+function validComixTitleUrl(url){
+  try{
+    const parsed=new URL(url);
+    return ['comix.to','www.comix.to'].includes(parsed.hostname.toLowerCase())
+      && /^\/title\/[^/]+\/?$/i.test(parsed.pathname);
+  }catch{
+    return false;
+  }
+}
+
+function comixUrls(){
+  return [...new Set(
+    $('#comixUrl').value
+      .split(/\r?\n/)
+      .map(v=>v.trim())
+      .filter(Boolean)
+  )];
+}
+
+function validComixChapterUrl(url){
+  try{
+    const parsed=new URL(url);
+    return ['comix.to','www.comix.to'].includes(parsed.hostname.toLowerCase())
+      && parsed.pathname.includes('/title/')
+      && parsed.pathname.toLowerCase().includes('chapter-')
+      && comixChapterNumber(url)!==null;
+  }catch{
+    return false;
+  }
+}
+
+function updateComixUrlCount(){
+  const urls=comixUrls();
+  const valid=urls.filter(validComixChapterUrl);
+  const invalid=urls.length-valid.length;
+
+  $('#comixUrlCount').textContent=invalid
+    ? `${valid.length} capítulo(s) reconhecido(s) · ${invalid} URL(s) inválida(s)`
+    : `${valid.length} capítulo(s) reconhecido(s)`;
+}
+
+$('#comixUrl').addEventListener('input',updateComixUrlCount);
+
+function visibleComixChapters(){
+  if(!comixState.source)return [];
+  return comixState.chapters.filter(ch=>ch.source===comixState.source);
+}
+
+function updateComixSelectionUI(){
+  const visible=visibleComixChapters();
+  const selected=visible.filter(ch=>comixState.selected.has(ch.url)).length;
+
+  $('#comixChapterCount').textContent=
+    `${visible.length} capítulo(s) · ${comixState.source||'sem fonte'}`;
+
+  $('#comixSelectedCount').textContent=selected
+    ? `${selected} capítulo(s) selecionado(s).`
+    : 'Nenhum capítulo selecionado.';
+}
+
+function renderComixChapters(){
+  const chapters=visibleComixChapters();
+  const tbody=$('#comixChapterTable');
+
+  tbody.innerHTML='';
+
+  chapters.forEach(ch=>{
+    const tr=document.createElement('tr');
+    const checked=comixState.selected.has(ch.url);
+
+    tr.innerHTML=`
+      <td>
+        <input
+          class="comix-chapter-check"
+          type="checkbox"
+          data-url="${escAttr(ch.url)}"
+          ${checked?'checked':''}
+        >
+      </td>
+      <td><b>Ch. ${fmt(ch.number)}</b></td>
+      <td>${esc(ch.source||'Comix')}</td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  $$('.comix-chapter-check').forEach(check=>{
+    check.addEventListener('change',()=>{
+      const url=check.dataset.url;
+
+      if(check.checked){
+        comixState.selected.add(url);
+      }else{
+        comixState.selected.delete(url);
+      }
+
+      updateComixSelectionUI();
+    });
+  });
+
+  updateComixSelectionUI();
+}
+
+async function loadComixChapters(){
+  const url=$('#comixTitleUrl').value.trim();
+
+  if(!url){
+    return toast('Informe a URL da obra no Comix.');
+  }
+
+  if(!validComixTitleUrl(url)){
+    return toast('Informe uma URL válida de obra do Comix.');
+  }
+
+  $('#comixLoadButton').disabled=true;
+  setBusy('Carregando capítulos do Comix…');
+
+  try{
+    const data=await api('/api/comix/chapters',{
+      method:'POST',
+      body:JSON.stringify({url})
+    });
+
+    comixState.chapters=data.chapters||[];
+    comixState.selected.clear();
+
+    const sources=data.sources||[];
+
+    if(!comixState.chapters.length || !sources.length){
+      throw new Error('Nenhum capítulo foi encontrado para esta obra.');
+    }
+
+    $('#comixSource').innerHTML=sources
+      .map(source=>`<option value="${escAttr(source)}">${esc(source)}</option>`)
+      .join('');
+
+    comixState.source=sources.includes('TappyToon')
+      ? 'TappyToon'
+      : sources[0];
+
+    $('#comixSource').value=comixState.source;
+
+    visibleComixChapters().forEach(ch=>{
+      comixState.selected.add(ch.url);
+    });
+
+    if(!$('#comixTitle').value.trim()){
+      $('#comixTitle').value=comixTitleFromUrl(url);
+    }
+
+    $('#comixDiscoveryControls').classList.remove('hidden');
+    $('#comixDiscovery').classList.remove('hidden');
+
+    renderComixChapters();
+
+    toast(`${visibleComixChapters().length} capítulo(s) encontrados em ${comixState.source}.`);
+  }catch(e){
+    comixState.chapters=[];
+    comixState.selected.clear();
+    comixState.source='';
+
+    $('#comixDiscoveryControls').classList.add('hidden');
+    $('#comixDiscovery').classList.add('hidden');
+
+    toast(e.message);
+  }finally{
+    setBusy('Pronto');
+    $('#comixLoadButton').disabled=false;
+  }
+}
+
+async function startComixDownload(){
+  const folderPattern=$('#comixFolderPattern').value.trim()||'Ch.01';
+
+  let chapters=[];
+  let mangaUrl=$('#comixTitleUrl').value.trim();
+
+  const discovered=visibleComixChapters()
+    .filter(ch=>comixState.selected.has(ch.url));
+
+  if(discovered.length){
+    chapters=discovered.map(ch=>({
+      number:ch.number,
+      url:ch.url,
+      title:ch.title||`Capítulo ${ch.number}`,
+      folder_pattern:folderPattern
+    }));
+  }else{
+    const urls=comixUrls();
+
+    if(!urls.length){
+      return toast('Selecione capítulos ou informe URLs diretas.');
+    }
+
+    const invalid=urls.filter(url=>!validComixChapterUrl(url));
+
+    if(invalid.length){
+      return toast(`${invalid.length} URL(s) inválida(s). Revise a lista antes de continuar.`);
+    }
+
+    chapters=urls.map(url=>{
+      const number=comixChapterNumber(url);
+
+      return {
+        number,
+        url,
+        title:`Capítulo ${number}`,
+        folder_pattern:folderPattern
+      };
+    });
+
+    mangaUrl=urls[0];
+  }
+
+  const title=$('#comixTitle').value.trim()
+    || comixTitleFromUrl(mangaUrl);
+
+  const manga={
+    title,
+    url:mangaUrl,
+    author:'',
+    genres:[],
+    cover_image_url:'',
+    summary:''
+  };
+
+  setBusy(`Iniciando ${chapters.length} capítulo(s) Comix…`);
+  $('#comixDownloadButton').disabled=true;
+
+  try{
+    await api('/api/downloads',{
+      method:'POST',
+      body:JSON.stringify({manga,chapters})
+    });
+
+    toast(`${chapters.length} capítulo(s) adicionado(s) à fila.`);
+    navigate('downloads');
+    await refreshDownloads();
+    startPolling();
+  }catch(e){
+    toast(e.message);
+  }finally{
+    setBusy('Pronto');
+    $('#comixDownloadButton').disabled=false;
+  }
+}
+
+updateComixUrlCount();
+
 async function runSearch(){ const q=$('#searchInput').value.trim(); if(!q) return toast('Informe um título ou URL.'); setBusy('Consultando…'); $('#searchButton').disabled=true;
   try{ if(state.searchMode==='url'){ await openManga(q); return; } const data=await api(`/api/search?q=${encodeURIComponent(q)}&page=1`); renderResults(data.results); $('#resultsMeta').textContent=`${data.results.length} resultado(s)`; $('#searchHint').textContent=`Busca por “${q}”`; }
   catch(e){toast(e.message);} finally{setBusy('Pronto');$('#searchButton').disabled=false;}

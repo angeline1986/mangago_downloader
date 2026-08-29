@@ -76,6 +76,47 @@ class WebV2ContractTests(unittest.TestCase):
             }
         return job_id, chapter_url
 
+    def test_post_comix_chapters_returns_sources_and_chapters(self):
+        fake_chapters = [
+            {
+                "number": 1.0,
+                "url": "https://comix.to/title/test/1-chapter-1",
+                "title": "Ch.1",
+                "source": "TappyToon",
+            },
+            {
+                "number": 2.0,
+                "url": "https://comix.to/title/test/2-chapter-2",
+                "title": "Ch.2",
+                "source": "TappyToon",
+            },
+            {
+                "number": 1.0,
+                "url": "https://comix.to/title/test/3-chapter-1",
+                "title": "Ch.1",
+                "source": "Lezhin",
+            },
+        ]
+
+        with patch(
+            "webapp.server.discover_comix_chapters",
+            return_value=fake_chapters,
+        ):
+            status, payload = self.request(
+                "POST",
+                "/api/comix/chapters",
+                {
+                    "url": "https://comix.to/title/test",
+                },
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            payload["sources"],
+            ["Lezhin", "TappyToon"],
+        )
+        self.assertEqual(payload["chapters"], fake_chapters)
+
     def test_health_and_local_web_shell(self):
         status, data = self.request('GET', '/api/health')
         self.assertEqual(status, 200)

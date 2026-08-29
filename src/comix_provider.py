@@ -12,7 +12,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from PIL import Image
 
@@ -85,6 +85,28 @@ class DrawTile:
     dh: int
 
 
+def is_comix_title_url(url: Optional[str]) -> bool:
+    """Return True for a Comix title page, excluding direct chapter URLs."""
+    if not url:
+        return False
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    host = parsed.netloc.lower().split(":", 1)[0]
+    if host not in COMIX_HOSTS:
+        return False
+
+    path = parsed.path.lower().rstrip("/")
+    if "/title/" not in path or "chapter-" in path:
+        return False
+
+    parts = [part for part in path.split("/") if part]
+    return len(parts) >= 2 and parts[0] == "title"
+
+
 def is_comix_chapter_url(url: Optional[str]) -> bool:
     if not url:
         return False
@@ -97,6 +119,176 @@ def is_comix_chapter_url(url: Optional[str]) -> bool:
         return False
     path = parsed.path.lower()
     return "/title/" in path and "chapter-" in path
+
+
+def _parse_comix_chapter_rows(rows: Sequence[dict], base_url: str) -> List[dict]:
+    """Normalize rendered Comix chapter rows and deduplicate them by URL."""
+    chapters: List[dict] = []
+    seen_urls = set()
+
+    for row in rows:
+        raw_url = str(row.get("url") or "").strip()
+        if not raw_url:
+            continue
+
+        url = urljoin(base_url, raw_url)
+        if url in seen_urls:
+            continue
+
+        match = re.search(r"chapter-([0-9]+(?:\.[0-9]+)?)(?:[/?#]|$)", url, re.I)
+        if not match:
+            continue
+
+        number = float(match.group(1))
+        source = str(row.get("source") or "").strip() or "Comix"
+        title = str(row.get("title") or "").strip() or f"Chapter {number:g}"
+
+        chapters.append(
+            {
+                "number": number,
+                "url": url,
+                "title": title,
+                "source": source,
+            }
+        )
+        seen_urls.add(url)
+
+    chapters.sort(key=lambda item: (item["number"], item["source"].lower(), item["url"]))
+    return chapters
+
+
+def discover_comix_chapters(title_url: str, timeout: int = 30) -> List[dict]:
+    """Discover all rendered chapters exposed by a Comix title page."""
+    return asyncio.run(_discover_comix_chapters_async(title_url, timeout=timeout))
+
+
+async def _discover_comix_chapters_async(title_url: str, timeout: int = 30) -> List[dict]:
+    from playwright.async_api import async_playwright
+
+    if not is_comix_title_url(title_url):
+        raise ParsingError("URL is not a supported Comix title URL.")
+
+    timeout_ms = max(1, int(timeout)) * 1000
+    parsed_title = urlparse(title_url)
+    base_title_url = f"{parsed_title.scheme}://{parsed_title.netloc}{parsed_title.path.rstrip('/')}"
+
+    collected: List[dict] = []
+
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+        context = await browser.new_context(
+            user_agent=DEFAULT_USER_AGENT,
+            viewport={"width": 1280, "height": 1800},
+            ignore_https_errors=False,
+        )
+        await context.add_init_script(COMIX_INIT_SCRIPT)
+        page = await context.new_page()
+        page.set_default_timeout(timeout_ms)
+
+        try:
+            response = await page.goto(
+                base_title_url,
+                wait_until="domcontentloaded",
+                timeout=timeout_ms,
+            )
+            if response is not None and response.status >= 400:
+                raise DownloadError(f"Comix title returned HTTP {response.status}.")
+
+            await page.locator(".mchap-item").first.wait_for(
+                state="attached",
+                timeout=timeout_ms,
+            )
+
+            raw_groups = await page.locator('a[href^="/groups/"]').evaluate_all(
+                """els => els.map(el => ({
+                    name: (el.textContent || '').trim(),
+                    href: el.getAttribute('href') || '',
+                    className: el.className || ''
+                }))"""
+            )
+
+            groups = {}
+
+            for item in raw_groups:
+                match = re.search(r"/groups/(\d+)", item.get("href") or "")
+                if not match:
+                    continue
+
+                group_id = match.group(1)
+
+                groups[group_id] = {
+                    "id": group_id,
+                    "name": str(item.get("name") or "").strip() or f"Group {group_id}",
+                    "official": "is-official" in str(item.get("className") or ""),
+                }
+
+            if not groups:
+                raise ParsingError("Comix title page exposed no chapter groups.")
+
+            for group in groups.values():
+                page_number = 1
+
+                while True:
+                    page_url = (
+                        f"{base_title_url}"
+                        f"?group_id={group['id']}&page={page_number}"
+                    )
+
+                    response = await page.goto(
+                        page_url,
+                        wait_until="domcontentloaded",
+                        timeout=timeout_ms,
+                    )
+
+                    if response is not None and response.status >= 400:
+                        raise DownloadError(
+                            f"Comix chapter list returned HTTP {response.status}."
+                        )
+
+                    try:
+                        await page.locator(".mchap-item").first.wait_for(
+                            state="attached",
+                            timeout=min(timeout_ms, 10000),
+                        )
+                    except Exception:
+                        pass
+
+                    rows = await page.locator(".mchap-item").evaluate_all(
+                        """els => els.map(el => {
+                          const primary = el.querySelector('a.mchap-row__primary');
+                          const chapter = el.querySelector('.mchap-row__ch');
+                          return {
+                            url: primary ? primary.getAttribute('href') : '',
+                            title: chapter ? chapter.textContent.trim() : ''
+                          };
+                        })"""
+                    )
+
+                    if not rows:
+                        break
+
+                    for row in rows:
+                        row["source"] = group["name"]
+                        row["group_id"] = group["id"]
+                        row["official"] = group["official"]
+
+                    collected.extend(rows)
+
+                    page_number += 1
+        finally:
+            await page.close()
+            await context.close()
+            await browser.close()
+
+    chapters = _parse_comix_chapter_rows(collected, base_title_url)
+
+    if not chapters:
+        raise ParsingError("Comix title page exposed no supported chapters.")
+
+    return chapters
 
 
 def _validate_draw_tiles(draws: Sequence[DrawTile]) -> tuple[int, int]:
@@ -350,8 +542,25 @@ async def _download_comix_chapter_async(
     page_delay = max(0.0, float(getattr(downloader, "page_delay", 0.0)))
     callback = progress_callback or getattr(downloader, "progress_callback", None)
 
-    manga_dir = f"{downloader.download_dir}/{sanitize_filename(manga.title)}"
-    chapter_dir = f"{manga_dir}/{sanitize_filename(f'Ch. {chapter.number:g}')}"
+    manga_dir = f"{downloader.download_dir}/comix/{sanitize_filename(manga.title)}"
+
+    pattern = (getattr(chapter, "folder_pattern", None) or "Ch.01").strip()
+    number = chapter.number
+    number_text = f"{number:g}"
+
+    import re
+    match = re.search(r"(0*1)", pattern)
+    if match:
+        width = len(match.group(1))
+        if float(number).is_integer():
+            formatted_number = str(int(number)).zfill(width)
+        else:
+            formatted_number = number_text
+        folder_name = pattern[:match.start()] + formatted_number + pattern[match.end():]
+    else:
+        folder_name = f"Ch.{number_text}"
+
+    chapter_dir = f"{manga_dir}/{sanitize_filename(folder_name)}"
     create_directory(chapter_dir)
     originals_dir = f"{chapter_dir}/originais"
     if getattr(downloader, "keep_originals", False) and getattr(downloader, "image_format", "original") == "png":

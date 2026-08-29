@@ -34,3 +34,88 @@ button,input,select{font:inherit}.app-shell{min-height:100vh;display:grid;grid-t
 .setting-row.setting-disabled input{pointer-events:none}
 .queue-status.converting{opacity:.85}
 @media(max-width:900px){.chapter-type-filter{width:100%;flex-wrap:wrap}}
+
+/* Comix: URL ocupa toda a largura disponível */
+#page-comix .setting-row:has(#comixUrl) {
+  grid-template-columns: 1fr;
+  gap: 10px;
+  padding: 14px 0;
+}
+
+#page-comix #comixUrl {
+  width: 100%;
+  max-width: none;
+}
+
+/* Comix: descoberta automática de capítulos */
+
+#page-comix .comix-load-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+}
+
+#page-comix .comix-load-row .setting-control {
+  flex: 1;
+  min-width: 0;
+}
+
+#page-comix .comix-discovery {
+  margin-top: 8px;
+}
+
+#page-comix .comix-discovery-row {
+  align-items: center;
+}
+
+#page-comix #comixSource {
+  width: 100%;
+  max-width: none;
+}
+
+#page-comix .chapter-table-card {
+  max-height: 420px;
+  overflow: auto;
+}
+
+#page-comix #comixChapterTable td {
+  vertical-align: middle;
+}
+
+#page-comix .comix-chapter-check {
+  cursor: pointer;
+}
+
+#page-comix .comix-advanced {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+#page-comix .comix-advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#page-comix #comixUrl {
+  width: 100%;
+  max-width: none;
+  min-height: 140px;
+  height: auto;
+  padding: 10px 11px;
+  resize: vertical;
+}
+
+#page-comix .comix-url-count {
+  display: block;
+  margin-top: 6px;
+}
+
+@media (max-width: 760px) {
+  #page-comix .comix-load-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
