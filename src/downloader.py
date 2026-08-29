@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup, Tag
 from PIL import Image, UnidentifiedImageError
 
 from .browser import browser_page
+from .comix_provider import download_comix_chapter, is_comix_chapter_url
 from .models import Chapter, Manga, DownloadResult
 from .utils import SessionManager, ParsingError, DownloadError, create_directory, sanitize_filename
 
@@ -228,6 +229,8 @@ def discover_chapter_reader_pages_with_cookies(chapter_url: str, timeout: int = 
 
 def fetch_chapter_image_urls(chapter_url: str, max_workers: int = 3, timeout: int = 30) -> List[str]:
     """Compatibility wrapper: return reader page URLs without resolving images."""
+    if is_comix_chapter_url(chapter_url):
+        return [chapter_url]
     return discover_chapter_reader_pages(chapter_url, timeout=timeout)
 
 def _parse_chapters_from_html(html: str, base_url: str) -> List[Chapter]:
@@ -547,6 +550,10 @@ class ChapterDownloader:
         pages are resolved inside the page worker so progress starts as soon as the
         dropdown has been discovered.
         """
+        if is_comix_chapter_url(chapter.url):
+            return download_comix_chapter(
+                self, manga, chapter, progress_callback=progress_callback
+            )
         # V4: Mangago reader pages must be rendered by a real browser; direct HTTP returns 403.
         if chapter.image_urls and all(_is_reader_page_url(url) for url in chapter.image_urls):
             return self._download_reader_chapter_playwright(
