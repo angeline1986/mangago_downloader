@@ -18,7 +18,12 @@ from PIL import Image, UnidentifiedImageError
 from .browser import browser_page
 from .comix_provider import download_comix_chapter, is_comix_chapter_url
 from .models import Chapter, Manga, DownloadResult
-from .chapter_validation import validate_chapter_images
+from .chapter_validation import (
+    remove_download_complete_marker,
+    validate_chapter_images,
+    write_download_complete_marker,
+    write_download_in_progress_marker,
+)
 from .output_paths import chapter_image_dir
 from .utils import SessionManager, ParsingError, DownloadError, create_directory, sanitize_filename
 
@@ -349,8 +354,13 @@ class ChapterDownloader:
             else:
                 result.error_message = message
 
-        return result
+        if validation.valid and result.success:
+            write_download_complete_marker(
+                result.file_path,
+                validation.expected_pages,
+            )
 
+        return result
 
     def __init__(
         self,
@@ -429,6 +439,11 @@ class ChapterDownloader:
             )
         )
         create_directory(chapter_dir)
+        remove_download_complete_marker(chapter_dir)
+        write_download_in_progress_marker(
+            chapter_dir,
+            expected_pages=len(page_urls),
+        )
         originals_dir = os.path.join(chapter_dir, "originais")
         if self.keep_originals and self.image_format == "png":
             create_directory(originals_dir)
@@ -649,6 +664,11 @@ class ChapterDownloader:
             )
         )
         create_directory(chapter_dir)
+        remove_download_complete_marker(chapter_dir)
+        write_download_in_progress_marker(
+            chapter_dir,
+            expected_pages=len(chapter.image_urls),
+        )
         originals_dir = os.path.join(chapter_dir, "originais")
         if self.keep_originals and self.image_format == "png":
             create_directory(originals_dir)

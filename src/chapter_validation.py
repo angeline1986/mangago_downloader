@@ -1,6 +1,7 @@
 """Structural validation for downloaded chapter image sets."""
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,6 +11,73 @@ from PIL import Image, UnidentifiedImageError
 
 
 PAGE_FILE_RE = re.compile(r"^page-(\d+)\.[^.]+$", re.IGNORECASE)
+DOWNLOAD_COMPLETE_FILE = ".download-complete.json"
+DOWNLOAD_IN_PROGRESS_FILE = ".download-in-progress.json"
+
+
+def _write_marker_atomic(marker: Path, payload: dict) -> Path:
+    """Write a JSON state marker atomically."""
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    temporary = marker.with_name(f"{marker.name}.tmp")
+
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(marker)
+    return marker
+
+
+def write_download_in_progress_marker(
+    chapter_dir: str | Path,
+    expected_pages: int = 0,
+) -> Path:
+    """Persist evidence that this chapter is currently being downloaded."""
+    directory = Path(chapter_dir)
+    marker = directory / DOWNLOAD_IN_PROGRESS_FILE
+
+    payload = {
+        "status": "downloading",
+        "expected_pages": max(0, int(expected_pages)),
+    }
+
+    return _write_marker_atomic(marker, payload)
+
+
+def remove_download_in_progress_marker(chapter_dir: str | Path) -> None:
+    """Remove the active-download marker."""
+    marker = Path(chapter_dir) / DOWNLOAD_IN_PROGRESS_FILE
+    try:
+        marker.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def write_download_complete_marker(
+    chapter_dir: str | Path,
+    expected_pages: int,
+) -> Path:
+    """Persist evidence that the chapter finished structural validation."""
+    directory = Path(chapter_dir)
+    marker = directory / DOWNLOAD_COMPLETE_FILE
+
+    payload = {
+        "status": "completed",
+        "expected_pages": int(expected_pages),
+    }
+
+    written = _write_marker_atomic(marker, payload)
+    remove_download_in_progress_marker(directory)
+    return written
+
+
+def remove_download_complete_marker(chapter_dir: str | Path) -> None:
+    """Remove stale completion evidence before/retrying a chapter download."""
+    marker = Path(chapter_dir) / DOWNLOAD_COMPLETE_FILE
+    try:
+        marker.unlink()
+    except FileNotFoundError:
+        pass
 
 
 @dataclass

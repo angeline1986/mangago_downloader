@@ -132,6 +132,95 @@ class DownloadFinalizerTests(unittest.TestCase):
             self.assertTrue(finalized.validation.valid)
             self.assertIsNone(finalized.error_message)
 
+    def test_finalize_writes_complete_marker_and_removes_in_progress_marker(self):
+        import json
+
+        from src.chapter_validation import write_download_in_progress_marker
+        from src.downloader import ChapterDownloader
+        from src.models import Chapter, DownloadResult
+
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp)
+
+            create_image(chapter_dir / "page-001.png")
+            create_image(chapter_dir / "page-002.png")
+
+            write_download_in_progress_marker(
+                chapter_dir,
+                expected_pages=2,
+            )
+
+            downloader = object.__new__(ChapterDownloader)
+            result = DownloadResult(
+                chapter=Chapter(
+                    number=1,
+                    url="https://example.com/chapter-1",
+                ),
+                success=True,
+                file_path=str(chapter_dir),
+                images_downloaded=2,
+            )
+
+            finalized = downloader._finalize_download_result(
+                result,
+                expected_pages=2,
+            )
+
+            complete = chapter_dir / ".download-complete.json"
+            in_progress = chapter_dir / ".download-in-progress.json"
+
+            self.assertTrue(finalized.success)
+            self.assertTrue(complete.is_file())
+            self.assertFalse(in_progress.exists())
+
+            payload = json.loads(
+                complete.read_text(encoding="utf-8")
+            )
+            self.assertEqual(payload["status"], "completed")
+            self.assertEqual(payload["expected_pages"], 2)
+
+    def test_finalize_invalid_chapter_does_not_write_complete_marker(self):
+        from src.chapter_validation import write_download_in_progress_marker
+        from src.downloader import ChapterDownloader
+        from src.models import Chapter, DownloadResult
+
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_dir = Path(tmp)
+
+            create_image(chapter_dir / "page-001.png")
+            create_image(chapter_dir / "page-003.png")
+
+            write_download_in_progress_marker(
+                chapter_dir,
+                expected_pages=3,
+            )
+
+            downloader = object.__new__(ChapterDownloader)
+            result = DownloadResult(
+                chapter=Chapter(
+                    number=1,
+                    url="https://example.com/chapter-1",
+                ),
+                success=True,
+                file_path=str(chapter_dir),
+                images_downloaded=2,
+            )
+
+            finalized = downloader._finalize_download_result(
+                result,
+                expected_pages=3,
+            )
+
+            complete = chapter_dir / ".download-complete.json"
+            in_progress = chapter_dir / ".download-in-progress.json"
+
+            self.assertFalse(finalized.success)
+            self.assertFalse(complete.exists())
+
+            # O marcador ativo permanece como evidência de que
+            # o capítulo nunca atingiu o estado concluído.
+            self.assertTrue(in_progress.is_file())
+
     def test_finalize_marks_failure_when_page_is_missing(self):
         from src.downloader import ChapterDownloader
         from src.models import Chapter, DownloadResult

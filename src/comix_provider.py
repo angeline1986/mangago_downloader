@@ -17,6 +17,10 @@ from urllib.parse import urljoin, urlparse
 from PIL import Image
 
 from .models import DownloadResult, Manga, Chapter
+from .chapter_validation import (
+    remove_download_complete_marker,
+    write_download_in_progress_marker,
+)
 from .output_paths import chapter_image_dir
 from .utils import DownloadError, ParsingError, create_directory, sanitize_filename
 from .browser import DEFAULT_USER_AGENT
@@ -698,6 +702,7 @@ async def _download_comix_chapter_async(
         )
     )
     create_directory(chapter_dir)
+    remove_download_complete_marker(chapter_dir)
     originals_dir = f"{chapter_dir}/originais"
     if getattr(downloader, "keep_originals", False) and getattr(downloader, "image_format", "original") == "png":
         create_directory(originals_dir)
@@ -745,6 +750,11 @@ async def _download_comix_chapter_async(
             if ordered != list(range(ordered[0], ordered[-1] + 1)):
                 raise ParsingError("Comix reader data-page sequence has gaps.")
             total = len(ordered)
+
+            write_download_in_progress_marker(
+                chapter_dir,
+                expected_pages=total,
+            )
 
             for position, page_number in enumerate(ordered, start=1):
                 wrapper = page.locator(

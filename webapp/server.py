@@ -234,7 +234,7 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
             def on_page(chapter: Chapter, current: int, total_pages: int) -> None:
                 pct = round((current / total_pages) * 100) if total_pages else 0
                 _update_chapter_row(job_id, chapter.url, status="downloading", current_page=current,
-                                    total_pages=total_pages, progress=pct, message=f"{current}/{total_pages} páginas")
+                                    total_pages=total_pages, progress=pct, message=f"Baixando · {current}/{total_pages} páginas")
                 _refresh_job_progress(job_id)
 
             downloader.progress_callback = on_page
