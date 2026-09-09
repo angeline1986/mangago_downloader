@@ -70,8 +70,38 @@ $('#searchButton').addEventListener('click', runSearch); $('#searchInput').addEv
 const comixState = {
   chapters: [],
   selected: new Set(),
-  source: ''
+  source: '',
+  sourceType: 'all'
 };
+
+const COMIX_OFFICIAL_SOURCES = new Set([
+  'official',
+  'webtoon',
+  'manta',
+  'tapas',
+  'lezhin',
+  'lezhin comics',
+  'kakao webtoon',
+  'pocket comics',
+  'tappytoon',
+  'netcomics',
+  'toomics'
+]);
+
+function normalizeComixSource(source){
+  return String(source||'')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .trim()
+    .replace(/\s+/g,' ')
+    .toLowerCase();
+}
+
+function comixSourceType(source){
+  return COMIX_OFFICIAL_SOURCES.has(normalizeComixSource(source))
+    ? 'official'
+    : 'regular';
+}
 
 const ridiState = { workUrl:'', title:'', chapters:[], selected:new Set() };
 
@@ -225,6 +255,24 @@ $('#comixSelectNone').addEventListener('click', () => {
   renderComixChapters();
 });
 
+$$('#comixSourceTypeSegment button').forEach(button=>{
+  button.addEventListener('click',()=>{
+    const nextType=button.dataset.value;
+    if(nextType===comixState.sourceType)return;
+
+    comixState.sourceType=nextType;
+    syncComixSourceTypeButtons();
+
+    const sources=visibleComixSources();
+    if(!sources.includes(comixState.source)){
+      selectComixSource(sources[0]||'');
+    }
+
+    renderComixSources();
+    renderComixChapters();
+  });
+});
+
 function comixChapterNumber(url){
   const m=String(url||'').match(/chapter-([0-9]+(?:\.[0-9]+)?)(?:[/?#]|$)/i);
   return m?Number(m[1]):null;
@@ -291,6 +339,27 @@ function visibleComixChapters(){
   return comixState.chapters.filter(ch=>ch.source===comixState.source);
 }
 
+function visibleComixSources(){
+  const sources=[...new Set(comixState.chapters.map(ch=>ch.source))];
+  if(comixState.sourceType==='all')return sources;
+  return sources.filter(source=>comixSourceType(source)===comixState.sourceType);
+}
+
+function syncComixSourceTypeButtons(){
+  $$('#comixSourceTypeSegment button').forEach(button=>{
+    button.classList.toggle('selected',button.dataset.value===comixState.sourceType);
+  });
+}
+
+function selectComixSource(source){
+  comixState.source=source||'';
+  $('#comixSource').value=comixState.source;
+  comixState.selected.clear();
+  visibleComixChapters().forEach(ch=>{
+    comixState.selected.add(ch.url);
+  });
+}
+
 function updateComixSelectionUI(){
   const visible=visibleComixChapters();
   const selected=visible.filter(ch=>comixState.selected.has(ch.url)).length;
@@ -312,33 +381,30 @@ function renderComixSources(){
     counts.set(ch.source,(counts.get(ch.source)||0)+1);
   });
 
-  box.innerHTML=[...counts.entries()]
-    .map(([source,count])=>`
-      <button
-        type="button"
-        class="comix-source-item ${source===comixState.source?'active':''}"
-        data-source="${escAttr(source)}"
-      >
-        <span>${esc(source)}</span>
-        <b>${count}</b>
-      </button>
-    `)
-    .join('');
+  const visibleSources=new Set(visibleComixSources());
+  const entries=[...counts.entries()]
+    .filter(([source])=>visibleSources.has(source));
 
-  $$('.comix-source-item').forEach(button=>{
+  box.innerHTML=entries.length
+    ? entries.map(([source,count])=>`
+        <button
+          type="button"
+          class="comix-source-item ${source===comixState.source?'active':''}"
+          data-source="${escAttr(source)}"
+        >
+          <span>${esc(source)}</span>
+          <b>${count}</b>
+        </button>
+      `).join('')
+    : '<div class="comix-source-empty">Nenhuma fonte nesta categoria.</div>';
+
+  $$('#comixSourceList .comix-source-item').forEach(button=>{
     button.addEventListener('click',()=>{
       const source=button.dataset.source;
 
       if(source===comixState.source)return;
 
-      comixState.source=source;
-      $('#comixSource').value=source;
-
-      comixState.selected.clear();
-      visibleComixChapters().forEach(ch=>{
-        comixState.selected.add(ch.url);
-      });
-
+      selectComixSource(source);
       renderComixSources();
       renderComixChapters();
     });
@@ -409,7 +475,8 @@ async function loadComixChapters(){
 
     comixState.chapters=data.chapters||[];
     comixState.selected.clear();
-
+    comixState.sourceType='all';
+    syncComixSourceTypeButtons();
     const sources=data.sources||[];
 
     if(!comixState.chapters.length || !sources.length){
@@ -445,7 +512,8 @@ async function loadComixChapters(){
     comixState.chapters=[];
     comixState.selected.clear();
     comixState.source='';
-
+    comixState.sourceType='all';
+    syncComixSourceTypeButtons();
     $('#comixDiscovery').classList.add('hidden');
     $('#comixConfigArrow').classList.add('hidden');
     $('#comixSourceList').innerHTML='';

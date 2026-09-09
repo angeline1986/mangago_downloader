@@ -117,6 +117,24 @@ class WebV2ContractTests(unittest.TestCase):
         )
         self.assertEqual(payload["chapters"], fake_chapters)
 
+    def test_comix_page_has_official_regular_source_filter_contract(self):
+        status, html = self.request("GET", "/")
+        self.assertEqual(status, 200)
+        app_js = (server.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+        css = (server.STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="comixSourceTypeSegment"', html)
+        self.assertIn('data-value="all" class="selected">Todas</button>', html)
+        self.assertIn('data-value="official">Oficial</button>', html)
+        self.assertIn('data-value="regular">Regular</button>', html)
+        self.assertIn("sourceType: 'all'", app_js)
+        self.assertIn("'official'", app_js)
+        self.assertIn("'tappytoon'", app_js)
+        self.assertIn("'lezhin'", app_js)
+        self.assertIn("function comixSourceType(source)", app_js)
+        self.assertIn("function visibleComixSources()", app_js)
+        self.assertIn("#page-comix .comix-source-filter {", css)
+
     def test_post_ridi_chapters_returns_discovered_viewer_chapters(self):
         fake_result = types.SimpleNamespace(
             work_url="https://ridibooks.com/books/4895003169",

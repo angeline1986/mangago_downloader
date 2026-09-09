@@ -121,6 +121,25 @@ button,input,select{font:inherit}.app-shell{min-height:100vh;display:grid;grid-t
 
 /* Fontes */
 
+#page-comix .comix-source-filter {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+#page-comix .comix-source-filter button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 7px 5px;
+  font-size: 10px;
+}
+
+#page-comix .comix-source-empty {
+  padding: 9px 10px;
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 :is(#page-comix, #page-ridi) .comix-sources-panel {
   padding: 18px 14px;
   border-right: 1px solid var(--border);
