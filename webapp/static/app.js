@@ -73,6 +73,45 @@ const comixState = {
   source: ''
 };
 
+function isRidiViewerUrl(value){
+  try{
+    const parsed=new URL(value);
+    return ['http:','https:'].includes(parsed.protocol)
+      && parsed.hostname.toLowerCase()==='ridibooks.com'
+      && /^\/books\/\d+\/view\/?$/.test(parsed.pathname)
+      && !parsed.username && !parsed.password && !parsed.port;
+  }catch(_){ return false; }
+}
+
+async function startRidiDownload(){
+  const url=$('#ridiChapterUrl').value.trim();
+  const title=$('#ridiTitle').value.trim();
+  const number=Number($('#ridiChapterNumber').value);
+  if(!isRidiViewerUrl(url))return toast('Informe uma URL válida de capítulo RIDI.');
+  if(!title)return toast('Informe o nome da obra.');
+  if(!Number.isFinite(number) || number<0)return toast('Informe um número de capítulo válido.');
+
+  const button=$('#ridiDownloadButton');
+  button.disabled=true;
+  setBusy('Iniciando RIDI…');
+  try{
+    await api('/api/downloads',{
+      method:'POST',
+      body:JSON.stringify({
+        manga:{title,url},
+        chapters:[{number,url,title:`Ch. ${number}`}],
+      }),
+    });
+    toast('Download RIDI iniciado.');
+    navigate('downloads');
+    await refreshDownloads();
+    startPolling();
+  }catch(e){ toast(e.message); }
+  finally{ button.disabled=false; setBusy('Pronto'); }
+}
+
+$('#ridiDownloadButton').addEventListener('click',startRidiDownload);
+
 $('#comixDownloadButton').addEventListener('click', startComixDownload);
 $('#comixLoadButton').addEventListener('click', loadComixChapters);
 $('#comixSelectAll').addEventListener('click', () => {

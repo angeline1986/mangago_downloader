@@ -283,6 +283,19 @@ class WebV2ContractTests(unittest.TestCase):
         self.assertIn('job_id', data)
         runner.assert_called_once()
 
+    def test_ridi_download_skips_mangago_discovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manga = Manga(title='RIDI Demo', url='https://ridibooks.com/books/4895003169/view')
+            chapter = Chapter(number=1.0, url='https://ridibooks.com/books/4895003169/view')
+            job_id = self.make_completed_job(Path(tmp) / 'RIDI Demo' / 'Ch. 1', chapter.url)[0]
+            with patch.object(server, 'discover_chapter_reader_pages_with_cookies') as discover:
+                with patch.object(server.ChapterDownloader, 'download_chapters') as download_chapters:
+                    server._run_download(job_id, manga, [chapter], {'download_location': tmp, 'auto_generate_pdf': False})
+            discover.assert_not_called()
+            download_chapters.assert_called_once()
+            routed = download_chapters.call_args.args[1]
+            self.assertEqual([item.url for item in routed], [chapter.url])
+
     def test_auto_generate_pdf_false_does_not_generate_after_completion(self):
         with tempfile.TemporaryDirectory() as tmp:
             chapter_dir = Path(tmp) / 'Demo' / 'Ch. 1'

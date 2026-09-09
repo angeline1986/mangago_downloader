@@ -36,6 +36,7 @@
         <button class="nav-item active" data-page="search"><span>⌕</span> Buscar</button>
         <button class="nav-item" data-page="manga" id="mangaNav" disabled><span>▣</span> Mangá</button>
         <button class="nav-item" data-page="comix"><span>◫</span> Comix</button>
+        <button class="nav-item" data-page="ridi"><span>▤</span> RIDI</button>
         <button class="nav-item" data-page="downloads"><span>↓</span> Downloads <em id="downloadBadge"></em></button>
         <button class="nav-item" data-page="settings"><span>⚙</span> Ajustes</button>
       </nav>
@@ -73,6 +74,32 @@
             <div class="empty-icon">⌕</div>
             <strong>Nenhum resultado ainda</strong>
             <span>Busque um título ou informe uma URL direta para começar.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-ridi">
+        <div class="page-heading">
+          <h1>RIDI Downloader</h1>
+          <p>Baixe um capítulo RIDI já conhecido usando a sessão autenticada do Chrome.</p>
+        </div>
+
+        <div class="settings-card">
+          <div class="setting-row">
+            <div><strong>URL do capítulo</strong><small>Use a URL /books/&lt;id&gt;/view.</small></div>
+            <input class="setting-control" id="ridiChapterUrl" type="url" placeholder="https://ridibooks.com/books/4895003169/view" autocomplete="off" />
+          </div>
+          <div class="setting-row">
+            <div><strong>Nome da obra</strong><small>Usado somente para organizar a pasta de saída.</small></div>
+            <input class="setting-control" id="ridiTitle" type="text" placeholder="Nome da obra" autocomplete="off" />
+          </div>
+          <div class="setting-row">
+            <div><strong>Número do capítulo</strong><small>Usado no nome da pasta e no acompanhamento.</small></div>
+            <input class="number-control" id="ridiChapterNumber" type="number" min="0" step="0.1" value="1" />
+          </div>
+          <div class="sticky-actions">
+            <span class="muted">O Chrome autenticado com CDP na porta 9222 deve permanecer aberto.</span>
+            <div><button class="primary" id="ridiDownloadButton">Iniciar download</button></div>
           </div>
         </div>
       </section>

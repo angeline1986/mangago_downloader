@@ -17,6 +17,7 @@ from PIL import Image, UnidentifiedImageError
 
 from .browser import browser_page
 from .comix_provider import download_comix_chapter, is_comix_chapter_url
+from .ridi_provider import download_ridi_chapter, is_ridi_chapter_url
 from .models import Chapter, Manga, DownloadResult
 from .chapter_validation import (
     remove_download_complete_marker,
@@ -643,6 +644,10 @@ class ChapterDownloader:
         pages are resolved inside the page worker so progress starts as soon as the
         dropdown has been discovered.
         """
+        if is_ridi_chapter_url(chapter.url):
+            return download_ridi_chapter(
+                self, manga, chapter, progress_callback=progress_callback
+            )
         if is_comix_chapter_url(chapter.url):
             return download_comix_chapter(
                 self, manga, chapter, progress_callback=progress_callback

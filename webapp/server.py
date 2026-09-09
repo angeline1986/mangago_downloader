@@ -22,6 +22,7 @@ from src.converter import _get_image_files, convert_to_cbz, convert_to_pdf
 from src.output_paths import chapter_pdf_path
 from src.downloader import ChapterDownloader, discover_chapter_reader_pages_with_cookies, get_chapter_list
 from src.comix_provider import discover_comix_chapters, is_comix_chapter_url, is_comix_title_url
+from src.ridi_provider import is_ridi_chapter_url
 from src.models import Chapter, Manga
 from src.search import get_manga_details, search_manga
 
@@ -177,6 +178,26 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
             _update_job(job_id, phase="locating", message=f"Localizando páginas do capítulo {chapter.number:g}…")
             _update_chapter_row(job_id, chapter.url, status="locating", message="Localizando páginas", progress=0)
             try:
+                if is_ridi_chapter_url(chapter.url):
+                    # RIDI owns viewer materialization/capture inside its provider.
+                    # Do not send RIDI through Mangago reader-page discovery.
+                    valid_chapters.append(chapter)
+                    _update_chapter_row(
+                        job_id,
+                        chapter.url,
+                        status="queued",
+                        message="Leitor RIDI identificado",
+                        total_pages=0,
+                        progress=0,
+                    )
+                    web_logger.info(
+                        "[JOB %s] RIDI Ch.%s identificado | url=%s",
+                        job_id[:8],
+                        chapter.number,
+                        chapter.url,
+                    )
+                    continue
+
                 if is_comix_chapter_url(chapter.url):
                     # Comix discovers its structural pages inside the provider itself.
                     # Do not send this URL through the Mangago-specific discovery path.
