@@ -21,6 +21,7 @@ from src.ridi_provider import (
     _CaptureStore,
     _read_expected_data_indexes,
     collect_ridi_viewer_pages,
+    discover_ridi_chapters,
     get_ridi_profile_dir,
     install_ridi_blob_capture,
     is_ridi_chapter_url,
@@ -78,6 +79,36 @@ class RidiUrlTests(unittest.TestCase):
         self.assertEqual(RIDI_PROFILE_RELATIVE_PATH, Path(".cache/ridibooks_chrome_profile"))
         self.assertEqual(RIDI_CDP_URL, "http://127.0.0.1:9222")
         self.assertEqual(RIDI_PAGE_ADVANCE_DELAY_MS, 1_000)
+
+
+class RidiDiscoveryTests(unittest.TestCase):
+    def test_discovers_only_explicit_viewer_rows_and_sorts(self):
+        page = unittest.mock.MagicMock()
+        page.url = "https://ridibooks.com/books/4895003169"
+        page.evaluate.return_value = {
+            "title": "죽어 마땅한 것들",
+            "chapters": [
+                {"number": 2, "title": "2화", "viewerUrl": "https://ridibooks.com/books/4895003199/view"},
+                {"number": 1, "title": "1화", "viewerUrl": "https://ridibooks.com/books/4895003169/view"},
+                {"number": 4, "title": "4화", "viewerUrl": "https://ridibooks.com/books/4895003203/view"},
+                {"number": 3, "title": "3화", "viewerUrl": "https://ridibooks.com/books/4895003200/view"},
+            ],
+        }
+        result = discover_ridi_chapters(page, "https://ridibooks.com/books/4895003169")
+        self.assertEqual(result.title, "죽어 마땅한 것들")
+        self.assertEqual([ch.number for ch in result.chapters], [1, 2, 3, 4])
+        self.assertEqual(result.chapters[1].viewer_url, "https://ridibooks.com/books/4895003199/view")
+        page.goto.assert_called_once()
+
+    def test_rejects_conflicting_number_mapping(self):
+        page = unittest.mock.MagicMock()
+        page.url = "https://ridibooks.com/books/4895003169"
+        page.evaluate.return_value = {"title": "Work", "chapters": [
+            {"number": 1, "viewerUrl": "https://ridibooks.com/books/1/view"},
+            {"number": 1, "viewerUrl": "https://ridibooks.com/books/2/view"},
+        ]}
+        with self.assertRaisesRegex(Exception, "conflicting viewer URLs"):
+            discover_ridi_chapters(page, "https://ridibooks.com/books/4895003169")
 
 
 class RidiProfileTests(unittest.TestCase):

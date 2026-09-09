@@ -81,24 +81,31 @@
       <section class="page" id="page-ridi">
         <div class="page-heading">
           <h1>RIDI Downloader</h1>
-          <p>Baixe um capítulo RIDI já conhecido usando a sessão autenticada do Chrome.</p>
+          <p>Informe a URL da obra para listar os capítulos atualmente disponíveis para leitura.</p>
         </div>
 
         <div class="settings-card">
           <div class="setting-row">
-            <div><strong>URL do capítulo</strong><small>Use a URL /books/&lt;id&gt;/view.</small></div>
-            <input class="setting-control" id="ridiChapterUrl" type="url" placeholder="https://ridibooks.com/books/4895003169/view" autocomplete="off" />
-          </div>
-          <div class="setting-row">
-            <div><strong>Nome da obra</strong><small>Usado somente para organizar a pasta de saída.</small></div>
-            <input class="setting-control" id="ridiTitle" type="text" placeholder="Nome da obra" autocomplete="off" />
-          </div>
-          <div class="setting-row">
-            <div><strong>Número do capítulo</strong><small>Usado no nome da pasta e no acompanhamento.</small></div>
-            <input class="number-control" id="ridiChapterNumber" type="number" min="0" step="0.1" value="1" />
+            <div><strong>URL da obra</strong><small>Use a URL /books/&lt;id&gt; da página da série.</small></div>
+            <input class="setting-control" id="ridiTitleUrl" type="url" placeholder="https://ridibooks.com/books/4895003169" autocomplete="off" />
           </div>
           <div class="sticky-actions">
             <span class="muted">O Chrome autenticado com CDP na porta 9222 deve permanecer aberto.</span>
+            <div><button class="primary" id="ridiLoadButton">Buscar capítulos</button></div>
+          </div>
+        </div>
+
+        <div class="settings-card hidden" id="ridiDiscovery">
+          <div class="setting-row">
+            <div><strong id="ridiWorkTitle">Obra RIDI</strong><small id="ridiChapterCount">0 capítulos</small></div>
+            <div class="chapter-actions">
+              <button class="secondary" id="ridiSelectAll">Todos</button>
+              <button class="secondary" id="ridiSelectNone">Nenhum</button>
+            </div>
+          </div>
+          <div class="comix-chapter-grid" id="ridiChapterTable"></div>
+          <div class="sticky-actions">
+            <span class="muted" id="ridiSelectedCount">Nenhum capítulo selecionado.</span>
             <div><button class="primary" id="ridiDownloadButton">Iniciar download</button></div>
           </div>
         </div>

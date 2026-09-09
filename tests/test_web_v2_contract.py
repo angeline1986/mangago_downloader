@@ -117,6 +117,28 @@ class WebV2ContractTests(unittest.TestCase):
         )
         self.assertEqual(payload["chapters"], fake_chapters)
 
+    def test_post_ridi_chapters_returns_discovered_viewer_chapters(self):
+        fake_result = types.SimpleNamespace(
+            work_url="https://ridibooks.com/books/4895003169",
+            title="죽어 마땅한 것들",
+            chapters=(
+                types.SimpleNamespace(number=1, title="1화", viewer_url="https://ridibooks.com/books/4895003169/view"),
+                types.SimpleNamespace(number=2, title="2화", viewer_url="https://ridibooks.com/books/4895003199/view"),
+            ),
+        )
+        fake_page = object()
+        manager = unittest.mock.MagicMock()
+        manager.__enter__.return_value = fake_page
+        manager.__exit__.return_value = False
+        with patch("webapp.server.ridi_cdp_browser_page", return_value=manager), patch(
+            "webapp.server.discover_ridi_chapters", return_value=fake_result
+        ) as discover:
+            status, payload = self.request("POST", "/api/ridi/chapters", {"url": fake_result.work_url})
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["title"], fake_result.title)
+        self.assertEqual([ch["number"] for ch in payload["chapters"]], [1, 2])
+        discover.assert_called_once_with(fake_page, fake_result.work_url)
+
     def test_shutdown_rejects_when_job_is_active(self):
         job_id = "job-shutdown-active"
 

@@ -73,44 +73,79 @@ const comixState = {
   source: ''
 };
 
-function isRidiViewerUrl(value){
+const ridiState = { workUrl:'', title:'', chapters:[], selected:new Set() };
+
+function isRidiTitleUrl(value){
   try{
     const parsed=new URL(value);
     return ['http:','https:'].includes(parsed.protocol)
       && parsed.hostname.toLowerCase()==='ridibooks.com'
-      && /^\/books\/\d+\/view\/?$/.test(parsed.pathname)
+      && /^\/books\/\d+\/?$/.test(parsed.pathname)
       && !parsed.username && !parsed.password && !parsed.port;
   }catch(_){ return false; }
 }
 
-async function startRidiDownload(){
-  const url=$('#ridiChapterUrl').value.trim();
-  const title=$('#ridiTitle').value.trim();
-  const number=Number($('#ridiChapterNumber').value);
-  if(!isRidiViewerUrl(url))return toast('Informe uma URL válida de capítulo RIDI.');
-  if(!title)return toast('Informe o nome da obra.');
-  if(!Number.isFinite(number) || number<0)return toast('Informe um número de capítulo válido.');
+function updateRidiSelectionUI(){
+  const selected=ridiState.chapters.filter(ch=>ridiState.selected.has(ch.url)).length;
+  $('#ridiChapterCount').textContent=`${ridiState.chapters.length} capítulo(s) · ${selected} selecionado(s)`;
+  $('#ridiSelectedCount').textContent=selected ? `${selected} capítulo(s) selecionado(s).` : 'Nenhum capítulo selecionado.';
+}
 
-  const button=$('#ridiDownloadButton');
-  button.disabled=true;
-  setBusy('Iniciando RIDI…');
+function renderRidiChapters(){
+  const grid=$('#ridiChapterTable');
+  grid.innerHTML='';
+  ridiState.chapters.forEach(ch=>{
+    const item=document.createElement('label');
+    item.className='comix-chapter-item';
+    item.innerHTML=`<input class="ridi-chapter-check" type="checkbox" data-url="${escAttr(ch.url)}" ${ridiState.selected.has(ch.url)?'checked':''}><b>Ch. ${fmt(ch.number)}</b>`;
+    grid.appendChild(item);
+  });
+  $$('.ridi-chapter-check').forEach(check=>check.addEventListener('change',()=>{
+    if(check.checked)ridiState.selected.add(check.dataset.url); else ridiState.selected.delete(check.dataset.url);
+    updateRidiSelectionUI();
+  }));
+  updateRidiSelectionUI();
+}
+
+async function loadRidiChapters(){
+  const url=$('#ridiTitleUrl').value.trim();
+  if(!isRidiTitleUrl(url))return toast('Informe uma URL válida de obra do RIDI.');
+  $('#ridiLoadButton').disabled=true;
+  setBusy('Listando capítulos do RIDI…');
   try{
-    await api('/api/downloads',{
-      method:'POST',
-      body:JSON.stringify({
-        manga:{title,url},
-        chapters:[{number,url,title:`Ch. ${number}`}],
-      }),
-    });
-    toast('Download RIDI iniciado.');
-    navigate('downloads');
-    await refreshDownloads();
-    startPolling();
+    const data=await api('/api/ridi/chapters',{method:'POST',body:JSON.stringify({url})});
+    ridiState.workUrl=data.url||url;
+    ridiState.title=data.title||'RIDI';
+    ridiState.chapters=data.chapters||[];
+    ridiState.selected.clear();
+    ridiState.chapters.forEach(ch=>ridiState.selected.add(ch.url));
+    if(!ridiState.chapters.length)throw new Error('Nenhum capítulo disponível para leitura foi encontrado.');
+    $('#ridiWorkTitle').textContent=ridiState.title;
+    $('#ridiDiscovery').classList.remove('hidden');
+    renderRidiChapters();
+    toast(`${ridiState.chapters.length} capítulo(s) RIDI disponível(is).`);
+  }catch(e){
+    ridiState.chapters=[]; ridiState.selected.clear();
+    $('#ridiDiscovery').classList.add('hidden');
+    toast(e.message);
+  }finally{ $('#ridiLoadButton').disabled=false; setBusy('Pronto'); }
+}
+
+async function startRidiDownload(){
+  const chapters=ridiState.chapters.filter(ch=>ridiState.selected.has(ch.url));
+  if(!chapters.length)return toast('Selecione ao menos um capítulo RIDI.');
+  const button=$('#ridiDownloadButton'); button.disabled=true; setBusy('Iniciando RIDI…');
+  try{
+    await api('/api/downloads',{method:'POST',body:JSON.stringify({manga:{title:ridiState.title,url:ridiState.workUrl},chapters})});
+    toast('Download RIDI iniciado.'); navigate('downloads'); await refreshDownloads(); startPolling();
   }catch(e){ toast(e.message); }
   finally{ button.disabled=false; setBusy('Pronto'); }
 }
 
+$('#ridiLoadButton').addEventListener('click',loadRidiChapters);
 $('#ridiDownloadButton').addEventListener('click',startRidiDownload);
+$('#ridiSelectAll').addEventListener('click',()=>{ridiState.chapters.forEach(ch=>ridiState.selected.add(ch.url));renderRidiChapters();});
+$('#ridiSelectNone').addEventListener('click',()=>{ridiState.selected.clear();renderRidiChapters();});
 
 $('#comixDownloadButton').addEventListener('click', startComixDownload);
 $('#comixLoadButton').addEventListener('click', loadComixChapters);

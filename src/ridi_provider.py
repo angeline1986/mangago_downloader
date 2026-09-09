@@ -74,6 +74,24 @@ SessionProbe = Callable[[Page], bool]
 
 
 @dataclass(frozen=True)
+class RidiDiscoveredChapter:
+    """One chapter explicitly exposed by the RIDI work page with a viewer URL."""
+
+    number: int
+    title: str
+    viewer_url: str
+
+
+@dataclass(frozen=True)
+class RidiDiscoveryResult:
+    """Work metadata and chapters that RIDI currently exposes as directly viewable."""
+
+    title: str
+    work_url: str
+    chapters: Tuple[RidiDiscoveredChapter, ...]
+
+
+@dataclass(frozen=True)
 class RidiCapturedPage:
     """One original image Blob correlated to its logical RIDI data-index."""
 
@@ -427,6 +445,72 @@ def _is_ridi_login_url(url: Optional[str]) -> bool:
         return False
     parsed = urlparse(url)
     return parsed.path.rstrip("/") == "/account/login"
+
+
+def discover_ridi_chapters(page: Page, work_url: str) -> RidiDiscoveryResult:
+    """Discover only chapters with an explicit /books/<id>/view link on a RIDI work page.
+
+    Paid/unavailable rows without a viewer link are intentionally ignored. Chapter
+    identity comes from the same ``.table_wrapper`` that owns the viewer link; link
+    order is never used to infer a chapter number.
+    """
+    if not is_ridi_title_url(work_url):
+        raise ValueError(f"Unsupported RIDI work URL: {work_url!r}")
+
+    page.goto(work_url, wait_until="domcontentloaded", timeout=30_000)
+    if _is_ridi_login_url(page.url):
+        raise RidiSessionRequiredError(
+            "The RIDI work page redirected to login. Keep the authenticated Chrome "
+            "session open and attach through ridi_cdp_browser_page()."
+        )
+
+    payload = page.evaluate(r"""
+    () => {
+      const title = (document.querySelector('h1')?.innerText || '').trim();
+      const chapters = [];
+      for (const link of document.querySelectorAll('a[href*="/books/"][href*="/view"]')) {
+        const row = link.closest('.table_wrapper');
+        if (!row) continue;
+        const text = (row.innerText || row.textContent || '').replace(/\s+/g, ' ').trim();
+        const match = text.match(/(\d+)화/);
+        if (!match) continue;
+        chapters.push({number: Number(match[1]), title: `${match[1]}화`, viewerUrl: link.href});
+      }
+      return {title, chapters};
+    }
+    """)
+    if not isinstance(payload, dict):
+        raise RidiProviderError("RIDI work discovery returned an unexpected payload")
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise RidiProviderError("RIDI work page did not expose a title in h1")
+
+    by_number: Dict[int, RidiDiscoveredChapter] = {}
+    by_url: Dict[str, int] = {}
+    raw_chapters = payload.get("chapters") or []
+    if not isinstance(raw_chapters, list):
+        raise RidiProviderError("RIDI work discovery returned an invalid chapter list")
+    for item in raw_chapters:
+        if not isinstance(item, dict):
+            raise RidiProviderError("RIDI work discovery returned an invalid chapter entry")
+        try:
+            number = int(item["number"])
+            viewer_url = str(item["viewerUrl"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RidiProviderError("RIDI work discovery returned an invalid chapter entry") from exc
+        if number <= 0 or not is_ridi_chapter_url(viewer_url):
+            raise RidiProviderError("RIDI work discovery returned an invalid chapter identity")
+        chapter = RidiDiscoveredChapter(number, str(item.get("title") or f"{number}화"), viewer_url)
+        existing = by_number.get(number)
+        if existing and existing.viewer_url != viewer_url:
+            raise RidiProviderError(f"RIDI chapter {number} has conflicting viewer URLs")
+        other_number = by_url.get(viewer_url)
+        if other_number is not None and other_number != number:
+            raise RidiProviderError(f"RIDI viewer URL is shared by chapters {other_number} and {number}")
+        by_number[number] = chapter
+        by_url[viewer_url] = number
+
+    return RidiDiscoveryResult(title, work_url, tuple(by_number[n] for n in sorted(by_number)))
 
 
 def install_ridi_blob_capture(page: Page) -> None:
