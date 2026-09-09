@@ -2,6 +2,7 @@
 import base64
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -23,6 +24,7 @@ from src.ridi_provider import (
     collect_ridi_viewer_pages,
     discover_ridi_chapters,
     get_ridi_profile_dir,
+    format_ridi_chapter_folder,
     install_ridi_blob_capture,
     is_ridi_chapter_url,
     is_ridi_title_url,
@@ -564,6 +566,22 @@ class RidiCaptureResultTests(unittest.TestCase):
 
         popen.assert_not_called()
         self.assertFalse(status["started"])
+
+    def test_format_ridi_chapter_folder_applies_configured_pattern(self):
+        cases = [
+            ("1", 3, "3"),
+            ("01", 3, "03"),
+            ("Ch. 1", 3, "Ch. 3"),
+            ("Ch. 01", 3, "Ch. 03"),
+        ]
+        for pattern, number, expected in cases:
+            with self.subTest(pattern=pattern):
+                chapter = SimpleNamespace(number=number, folder_pattern=pattern)
+                self.assertEqual(format_ridi_chapter_folder(chapter), expected)
+
+    def test_format_ridi_chapter_folder_keeps_legacy_default_without_pattern(self):
+        chapter = SimpleNamespace(number=3, folder_pattern=None)
+        self.assertEqual(format_ridi_chapter_folder(chapter), "Ch. 3")
 
 
 if __name__ == "__main__":

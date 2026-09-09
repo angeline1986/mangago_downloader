@@ -783,6 +783,30 @@ def save_ridi_captured_pages(result: RidiCaptureResult, output_dir: Path) -> Tup
     return tuple(saved)
 
 
+
+def format_ridi_chapter_folder(chapter) -> str:
+    """Aplica o padrão configurado na UI ao número real do capítulo."""
+    pattern = str(getattr(chapter, "folder_pattern", "") or "").strip()
+    number = float(chapter.number)
+    integer_number = number.is_integer()
+    number_text = str(int(number)) if integer_number else f"{number:g}"
+
+    if not pattern:
+        return f"Ch. {number_text}"
+
+    match = re.search(r"(\d+(?:\.\d+)?)", pattern)
+    if not match:
+        return pattern
+
+    token = match.group(1)
+    if "." in token or not integer_number:
+        replacement = number_text
+    else:
+        replacement = str(int(number)).zfill(len(token))
+
+    return pattern[:match.start()] + replacement + pattern[match.end():]
+
+
 def download_ridi_chapter(downloader, manga, chapter, progress_callback=None):
     """Capture one RIDI viewer chapter through CDP and use shared save/validation."""
     if not is_ridi_chapter_url(getattr(chapter, "url", None)):
@@ -795,7 +819,7 @@ def download_ridi_chapter(downloader, manga, chapter, progress_callback=None):
 
     chapter_dir = str(chapter_image_dir(
         downloader.download_dir, "ridi", sanitize_filename(manga.title),
-        sanitize_filename(f"Ch. {chapter.number:g}"),
+        sanitize_filename(format_ridi_chapter_folder(chapter)),
     ))
     create_directory(chapter_dir)
     remove_download_complete_marker(chapter_dir)
