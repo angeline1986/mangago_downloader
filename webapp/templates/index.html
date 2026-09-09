@@ -84,30 +84,95 @@
           <p>Informe a URL da obra para listar os capítulos atualmente disponíveis para leitura.</p>
         </div>
 
-        <div class="settings-card">
-          <div class="setting-row">
-            <div><strong>URL da obra</strong><small>Use a URL /books/&lt;id&gt; da página da série.</small></div>
-            <input class="setting-control" id="ridiTitleUrl" type="url" placeholder="https://ridibooks.com/books/4895003169" autocomplete="off" />
-          </div>
-          <div class="sticky-actions">
-            <span class="muted">O Chrome autenticado com CDP na porta 9222 deve permanecer aberto.</span>
-            <div><button class="primary" id="ridiLoadButton">Buscar capítulos</button></div>
-          </div>
-        </div>
+        <div class="comix-flow">
 
-        <div class="settings-card hidden" id="ridiDiscovery">
-          <div class="setting-row">
-            <div><strong id="ridiWorkTitle">Obra RIDI</strong><small id="ridiChapterCount">0 capítulos</small></div>
-            <div class="chapter-actions">
-              <button class="secondary" id="ridiSelectAll">Todos</button>
-              <button class="secondary" id="ridiSelectNone">Nenhum</button>
+          <section class="comix-step">
+            <div class="comix-step-heading">
+              <span class="comix-step-number">1</span>
+              <div>
+                <h2>Obra</h2>
+                <p>Use a página principal da obra no RIDI, sem URL de capítulo.</p>
+              </div>
             </div>
-          </div>
-          <div class="comix-chapter-grid" id="ridiChapterTable"></div>
-          <div class="sticky-actions">
-            <span class="muted" id="ridiSelectedCount">Nenhum capítulo selecionado.</span>
-            <div><button class="primary" id="ridiDownloadButton">Iniciar download</button></div>
-          </div>
+
+            <div class="comix-load-row">
+              <input
+                class="setting-control wide"
+                id="ridiTitleUrl"
+                type="url"
+                placeholder="https://ridibooks.com/books/4895003169"
+                autocomplete="off"
+              />
+              <button class="primary" id="ridiLoadButton">Listar capítulos</button>
+            </div>
+            <p class="muted">O Chrome autenticado com CDP na porta 9222 deve permanecer aberto.</p>
+          </section>
+
+          <div class="comix-flow-arrow">↓</div>
+
+          <section class="comix-step hidden" id="ridiDiscovery">
+            <div class="comix-chapters-head">
+              <div class="comix-step-heading compact">
+                <span class="comix-step-number">2</span>
+                <div>
+                  <h2>Capítulos — <span id="ridiWorkTitle">Obra RIDI</span></h2>
+                  <p id="ridiChapterCount">0 capítulos</p>
+                </div>
+              </div>
+
+              <div class="chapter-actions">
+                <button class="secondary" id="ridiSelectAll">Todos</button>
+                <button class="secondary" id="ridiSelectNone">Nenhum</button>
+              </div>
+            </div>
+
+            <div class="comix-chapter-grid" id="ridiChapterTable"></div>
+          </section>
+
+          <div class="comix-flow-arrow hidden" id="ridiConfigArrow">↓</div>
+
+          <section class="comix-step">
+            <div class="comix-step-heading">
+              <span class="comix-step-number">3</span>
+              <div>
+                <h2>Configuração</h2>
+                <p>Defina o nome da obra e o padrão das pastas.</p>
+              </div>
+            </div>
+
+            <div class="comix-config-grid">
+              <div class="field-group">
+                <label for="ridiTitle">Nome da obra</label>
+                <small>Opcional. Se ficar vazio, será usado o título identificado no RIDI.</small>
+                <input
+                  class="setting-control wide"
+                  id="ridiTitle"
+                  type="text"
+                  placeholder="Nome da obra"
+                  autocomplete="off"
+                />
+              </div>
+
+              <div class="field-group">
+                <label for="ridiFolderPattern">Padrão das pastas</label>
+                <small>Exemplos: Ch. 01, Ch. 1, 01 ou 1.</small>
+                <input
+                  class="setting-control wide"
+                  id="ridiFolderPattern"
+                  type="text"
+                  value="Ch. 01"
+                  placeholder="Ch. 01"
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+
+            <div class="comix-download-bar">
+              <span class="muted" id="ridiSelectedCount">Nenhum capítulo selecionado.</span>
+              <button class="primary" id="ridiDownloadButton">Baixar capítulos</button>
+            </div>
+          </section>
+
         </div>
       </section>
 

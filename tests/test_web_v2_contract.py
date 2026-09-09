@@ -139,6 +139,32 @@ class WebV2ContractTests(unittest.TestCase):
         self.assertEqual([ch["number"] for ch in payload["chapters"]], [1, 2])
         discover.assert_called_once_with(fake_page, fake_result.work_url)
 
+    def test_ridi_page_uses_same_configuration_contract_as_comix(self):
+        status, html = self.request("GET", "/")
+        self.assertEqual(status, 200)
+        self.assertIn('id="ridiTitle"', html)
+        self.assertIn('id="ridiFolderPattern"', html)
+        self.assertIn('value="Ch. 01"', html)
+        self.assertIn('id="ridiDownloadButton">Baixar capítulos</button>', html)
+        self.assertIn('id="ridiConfigArrow"', html)
+
+    def test_ridi_reuses_comix_visual_contract(self):
+        status, html = self.request("GET", "/")
+        self.assertEqual(status, 200)
+        css = (server.STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="page-ridi"', html)
+        self.assertIn('class="comix-download-bar"', html)
+        self.assertIn(':is(#page-comix, #page-ridi) .comix-step {', css)
+        self.assertIn(':is(#page-comix, #page-ridi) .comix-chapter-grid {', css)
+        self.assertIn(':is(#page-comix, #page-ridi) .comix-config-grid {', css)
+
+    def test_ridi_frontend_sends_folder_pattern_with_selected_chapters(self):
+        app_js = (server.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const folderPattern=$('#ridiFolderPattern').value.trim()||'Ch. 01';", app_js)
+        self.assertIn("folder_pattern:folderPattern", app_js)
+        self.assertIn("const title=$('#ridiTitle').value.trim()||ridiState.title||'RIDI';", app_js)
+
     def test_shutdown_rejects_when_job_is_active(self):
         job_id = "job-shutdown-active"
 

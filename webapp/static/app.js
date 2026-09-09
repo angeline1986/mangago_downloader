@@ -116,28 +116,42 @@ async function loadRidiChapters(){
     const data=await api('/api/ridi/chapters',{method:'POST',body:JSON.stringify({url})});
     ridiState.workUrl=data.url||url;
     ridiState.title=data.title||'RIDI';
+    if(!$('#ridiTitle').value.trim())$('#ridiTitle').value=ridiState.title;
     ridiState.chapters=data.chapters||[];
     ridiState.selected.clear();
     ridiState.chapters.forEach(ch=>ridiState.selected.add(ch.url));
     if(!ridiState.chapters.length)throw new Error('Nenhum capítulo disponível para leitura foi encontrado.');
     $('#ridiWorkTitle').textContent=ridiState.title;
     $('#ridiDiscovery').classList.remove('hidden');
+    $('#ridiConfigArrow').classList.remove('hidden');
     renderRidiChapters();
     toast(`${ridiState.chapters.length} capítulo(s) RIDI disponível(is).`);
   }catch(e){
     ridiState.chapters=[]; ridiState.selected.clear();
     $('#ridiDiscovery').classList.add('hidden');
+    $('#ridiConfigArrow').classList.add('hidden');
     toast(e.message);
   }finally{ $('#ridiLoadButton').disabled=false; setBusy('Pronto'); }
 }
 
 async function startRidiDownload(){
-  const chapters=ridiState.chapters.filter(ch=>ridiState.selected.has(ch.url));
+  const folderPattern=$('#ridiFolderPattern').value.trim()||'Ch. 01';
+  const chapters=ridiState.chapters
+    .filter(ch=>ridiState.selected.has(ch.url))
+    .map(ch=>({
+      number:ch.number,
+      url:ch.url,
+      title:ch.title||`Capítulo ${ch.number}`,
+      folder_pattern:folderPattern
+    }));
   if(!chapters.length)return toast('Selecione ao menos um capítulo RIDI.');
-  const button=$('#ridiDownloadButton'); button.disabled=true; setBusy('Iniciando RIDI…');
+
+  const title=$('#ridiTitle').value.trim()||ridiState.title||'RIDI';
+  const manga={title,url:ridiState.workUrl,author:'',genres:[],cover_image_url:'',summary:''};
+  const button=$('#ridiDownloadButton'); button.disabled=true; setBusy(`Iniciando ${chapters.length} capítulo(s) RIDI…`);
   try{
-    await api('/api/downloads',{method:'POST',body:JSON.stringify({manga:{title:ridiState.title,url:ridiState.workUrl},chapters})});
-    toast('Download RIDI iniciado.'); navigate('downloads'); await refreshDownloads(); startPolling();
+    await api('/api/downloads',{method:'POST',body:JSON.stringify({manga,chapters})});
+    toast(`${chapters.length} capítulo(s) adicionado(s) à fila.`); navigate('downloads'); await refreshDownloads(); startPolling();
   }catch(e){ toast(e.message); }
   finally{ button.disabled=false; setBusy('Pronto'); }
 }
