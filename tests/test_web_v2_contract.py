@@ -554,6 +554,38 @@ class WebV2ContractTests(unittest.TestCase):
             self.assertEqual(rows[1]['pdf_status'], 'generated')
             self.assertNotEqual(Path(rows[0]['pdf_path']).parent, Path(rows[1]['pdf_path']).parent)
 
+    def test_get_ridi_session_returns_provider_status(self):
+        expected = {
+            "chrome_running": True,
+            "authenticated": True,
+            "message": "RIDI conectado.",
+        }
+        with patch("webapp.server.get_ridi_session_status", return_value=expected):
+            status, payload = self.request("GET", "/api/ridi/session")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, expected)
+
+    def test_post_ridi_session_start_delegates_to_provider(self):
+        expected = {
+            "chrome_running": True,
+            "authenticated": False,
+            "started": True,
+            "message": "Chrome RIDI aberto. Faça login no RIDI.",
+        }
+        with patch("webapp.server.start_ridi_chrome", return_value=expected) as start:
+            status, payload = self.request("POST", "/api/ridi/session/start", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, expected)
+        start.assert_called_once_with()
+
+    def test_ridi_login_controls_are_present(self):
+        html = (Path(server.TEMPLATE_DIR) / "index.html").read_text(encoding="utf-8")
+        js = (Path(server.STATIC_DIR) / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="ridiLoginButton"', html)
+        self.assertIn('id="ridiSessionStatus"', html)
+        self.assertIn("/api/ridi/session/start", js)
+        self.assertIn("/api/ridi/session", js)
+
 
 if __name__ == '__main__':
     unittest.main()

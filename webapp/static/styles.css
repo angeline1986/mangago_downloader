@@ -362,3 +362,48 @@ button,input,select{font:inherit}.app-shell{min-height:100vh;display:grid;grid-t
     align-items: stretch;
   }
 }
+
+
+:is(#page-ridi) .ridi-session-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:12px 14px;
+  margin-bottom:12px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:var(--surface-2);
+}
+
+:is(#page-ridi) .ridi-session-row > div {
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  min-width:0;
+}
+
+:is(#page-ridi) .ridi-session-row strong {
+  font-size:12px;
+}
+
+:is(#page-ridi) #ridiSessionStatus[data-state="connected"] {
+  color:var(--success);
+  font-weight:700;
+}
+
+:is(#page-ridi) #ridiSessionStatus[data-state="login"] {
+  color:var(--primary);
+  font-weight:700;
+}
+
+@media (max-width: 760px) {
+  :is(#page-ridi) .ridi-session-row {
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  :is(#page-ridi) .ridi-session-row .secondary {
+    width:100%;
+  }
+}

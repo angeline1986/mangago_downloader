@@ -91,6 +91,57 @@ function updateRidiSelectionUI(){
   $('#ridiSelectedCount').textContent=selected ? `${selected} capítulo(s) selecionado(s).` : 'Nenhum capítulo selecionado.';
 }
 
+function renderRidiSessionStatus(status){
+  const label=$('#ridiSessionStatus');
+  if(!label)return;
+  const running=Boolean(status&&status.chrome_running);
+  const authenticated=Boolean(status&&status.authenticated);
+  label.dataset.state=authenticated?'connected':running?'login':'offline';
+  label.textContent=(status&&status.message)||(authenticated?'RIDI conectado.':running?'Chrome RIDI aberto. Faça login no RIDI.':'Chrome RIDI não iniciado.');
+}
+
+async function refreshRidiSessionStatus({silent=false}={}){
+  try{
+    const status=await api('/api/ridi/session');
+    renderRidiSessionStatus(status);
+    return status;
+  }catch(e){
+    renderRidiSessionStatus({chrome_running:false,authenticated:false,message:'Chrome RIDI não iniciado.'});
+    if(!silent)toast(e.message||String(e));
+    return null;
+  }
+}
+
+async function startRidiLogin(){
+  const button=$('#ridiLoginButton');
+  button.disabled=true;
+  setBusy('Abrindo Chrome RIDI…');
+  try{
+    const status=await api('/api/ridi/session/start',{method:'POST',body:'{}'});
+    renderRidiSessionStatus(status);
+    if(status.authenticated){
+      toast('RIDI conectado.');
+    }else if(status.chrome_running){
+      toast('Chrome RIDI aberto. Faça login e mantenha a janela aberta.');
+    }else{
+      toast(status.message||'Chrome RIDI iniciado.');
+    }
+    for(let i=0;i<24 && !status.authenticated;i++){
+      await new Promise(resolve=>setTimeout(resolve,2500));
+      const current=await refreshRidiSessionStatus({silent:true});
+      if(current&&current.authenticated){
+        toast('Login RIDI detectado.');
+        break;
+      }
+    }
+  }catch(e){
+    toast(e.message||String(e));
+  }finally{
+    button.disabled=false;
+    setBusy('Pronto');
+  }
+}
+
 function renderRidiChapters(){
   const grid=$('#ridiChapterTable');
   grid.innerHTML='';
@@ -156,10 +207,12 @@ async function startRidiDownload(){
   finally{ button.disabled=false; setBusy('Pronto'); }
 }
 
+$('#ridiLoginButton').addEventListener('click',startRidiLogin);
 $('#ridiLoadButton').addEventListener('click',loadRidiChapters);
 $('#ridiDownloadButton').addEventListener('click',startRidiDownload);
 $('#ridiSelectAll').addEventListener('click',()=>{ridiState.chapters.forEach(ch=>ridiState.selected.add(ch.url));renderRidiChapters();});
 $('#ridiSelectNone').addEventListener('click',()=>{ridiState.selected.clear();renderRidiChapters();});
+refreshRidiSessionStatus({silent:true});
 
 $('#comixDownloadButton').addEventListener('click', startComixDownload);
 $('#comixLoadButton').addEventListener('click', loadComixChapters);

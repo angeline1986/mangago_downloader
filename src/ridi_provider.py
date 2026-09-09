@@ -6,8 +6,12 @@ import binascii
 from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
+import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import sys
 import time
 from typing import Callable, Dict, Iterator, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlparse
@@ -18,6 +22,8 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sy
 RIDI_HOSTS = frozenset({"ridibooks.com"})
 RIDI_PROFILE_RELATIVE_PATH = Path(".cache/ridibooks_chrome_profile")
 RIDI_CDP_URL = "http://127.0.0.1:9222"
+RIDI_HOME_URL = "https://ridibooks.com/"
+RIDI_CHROME_MAC_PATH = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 RIDI_PAGE_ADVANCE_DELAY_MS = 1_000
 
 _RIDI_TITLE_PATH_RE = re.compile(r"^/books/\d+/?$")
@@ -309,6 +315,98 @@ def get_ridi_profile_dir(home: Optional[Path] = None) -> Path:
     """Return the dedicated RIDI Chrome profile path without creating it."""
     base = Path.home() if home is None else Path(home)
     return base.expanduser() / RIDI_PROFILE_RELATIVE_PATH
+
+
+
+def _ridi_chrome_executable() -> Path:
+    """Return the real Google Chrome executable used for the RIDI session."""
+    override = os.environ.get("RIDI_CHROME_EXECUTABLE")
+    if override:
+        candidate = Path(override).expanduser()
+        if candidate.is_file():
+            return candidate
+        raise RidiProviderError(f"RIDI_CHROME_EXECUTABLE does not exist: {candidate}")
+
+    if sys.platform == "darwin" and RIDI_CHROME_MAC_PATH.is_file():
+        return RIDI_CHROME_MAC_PATH
+
+    for name in ("google-chrome", "google-chrome-stable", "chrome"):
+        resolved = shutil.which(name)
+        if resolved:
+            return Path(resolved)
+
+    raise RidiProviderError(
+        "Google Chrome was not found. Install real Google Chrome or set "
+        "RIDI_CHROME_EXECUTABLE."
+    )
+
+
+def get_ridi_session_status(*, cdp_url: str = RIDI_CDP_URL) -> dict:
+    """Inspect the externally owned Chrome session without exposing cookie values."""
+    try:
+        with ridi_cdp_browser_page(cdp_url=cdp_url) as page:
+            context = page.context
+            cookies = context.cookies([RIDI_HOME_URL])
+            authenticated = any(
+                cookie.get("name") == "ridi_auth" and cookie.get("domain", "").endswith("ridibooks.com")
+                for cookie in cookies
+            )
+            return {
+                "chrome_running": True,
+                "authenticated": authenticated,
+                "message": "RIDI conectado." if authenticated else "Chrome RIDI aberto. Faça login no RIDI.",
+            }
+    except Exception:
+        return {
+            "chrome_running": False,
+            "authenticated": False,
+            "message": "Chrome RIDI não iniciado.",
+        }
+
+
+def start_ridi_chrome(
+    *,
+    cdp_url: str = RIDI_CDP_URL,
+    user_data_dir: Optional[Path] = None,
+) -> dict:
+    """Start the dedicated real Chrome session used by RIDI, without owning its lifecycle."""
+    current = get_ridi_session_status(cdp_url=cdp_url)
+    if current["chrome_running"]:
+        current["started"] = False
+        return current
+
+    profile = get_ridi_profile_dir() if user_data_dir is None else Path(user_data_dir).expanduser()
+    executable = _ridi_chrome_executable()
+    command = [
+        str(executable),
+        f"--user-data-dir={profile}",
+        "--remote-debugging-port=9222",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--new-window",
+        RIDI_HOME_URL,
+    ]
+    subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    deadline = time.monotonic() + 8.0
+    while time.monotonic() < deadline:
+        status = get_ridi_session_status(cdp_url=cdp_url)
+        if status["chrome_running"]:
+            status["started"] = True
+            return status
+        time.sleep(0.25)
+
+    return {
+        "chrome_running": False,
+        "authenticated": False,
+        "started": True,
+        "message": "Chrome RIDI iniciado; aguardando a porta CDP 9222 ficar disponível.",
+    }
 
 
 def require_usable_ridi_session(

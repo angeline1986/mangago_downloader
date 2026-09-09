@@ -30,6 +30,8 @@ from src.ridi_provider import (
     ridi_browser_page,
     ridi_cdp_browser_page,
     save_ridi_captured_pages,
+    get_ridi_session_status,
+    start_ridi_chrome,
 )
 
 
@@ -530,6 +532,38 @@ class RidiCaptureResultTests(unittest.TestCase):
             collect_ridi_viewer_pages(page, "https://ridibooks.com/books/4895003169")
         page.add_init_script.assert_not_called()
         page.goto.assert_not_called()
+
+    def test_get_ridi_session_status_reports_running_and_authenticated_without_exposing_cookie_value(self):
+        fake_context = unittest.mock.MagicMock()
+        fake_context.cookies.return_value = [
+            {"name": "ridi_auth", "domain": ".ridibooks.com", "value": "secret"},
+        ]
+        fake_page = unittest.mock.MagicMock()
+        fake_page.context = fake_context
+        manager = unittest.mock.MagicMock()
+        manager.__enter__.return_value = fake_page
+        manager.__exit__.return_value = False
+
+        with patch("src.ridi_provider.ridi_cdp_browser_page", return_value=manager):
+            status = get_ridi_session_status()
+
+        self.assertTrue(status["chrome_running"])
+        self.assertTrue(status["authenticated"])
+        self.assertNotIn("secret", repr(status))
+
+    def test_start_ridi_chrome_does_not_launch_second_instance_when_cdp_is_running(self):
+        running = {
+            "chrome_running": True,
+            "authenticated": False,
+            "message": "Chrome RIDI aberto. Faça login no RIDI.",
+        }
+        with patch("src.ridi_provider.get_ridi_session_status", return_value=running), patch(
+            "src.ridi_provider.subprocess.Popen"
+        ) as popen:
+            status = start_ridi_chrome()
+
+        popen.assert_not_called()
+        self.assertFalse(status["started"])
 
 
 if __name__ == "__main__":

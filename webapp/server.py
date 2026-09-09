@@ -22,7 +22,14 @@ from src.converter import _get_image_files, convert_to_cbz, convert_to_pdf
 from src.output_paths import chapter_pdf_path
 from src.downloader import ChapterDownloader, discover_chapter_reader_pages_with_cookies, get_chapter_list
 from src.comix_provider import discover_comix_chapters, is_comix_chapter_url, is_comix_title_url
-from src.ridi_provider import discover_ridi_chapters, is_ridi_chapter_url, is_ridi_title_url, ridi_cdp_browser_page
+from src.ridi_provider import (
+    discover_ridi_chapters,
+    get_ridi_session_status,
+    is_ridi_chapter_url,
+    is_ridi_title_url,
+    ridi_cdp_browser_page,
+    start_ridi_chrome,
+)
 from src.models import Chapter, Manga
 from src.search import get_manga_details, search_manga
 
@@ -373,6 +380,9 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
         if path == "/api/settings":
             self._json(_config.get_all())
             return
+        if path == "/api/ridi/session":
+            self._json(get_ridi_session_status())
+            return
         if path == "/api/search":
             query = (parse_qs(parsed.query).get("q") or [""])[0].strip()
             if not query:
@@ -413,6 +423,13 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                 chapters = get_chapter_list(handle)
                 manga.total_chapters = len(chapters)
                 self._json({"manga": _manga_dict(manga), "chapters": [_chapter_dict(ch) for ch in chapters]})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 502)
+            return
+
+        if path == "/api/ridi/session/start":
+            try:
+                self._json(start_ridi_chrome())
             except Exception as exc:
                 self._json({"error": str(exc)}, 502)
             return
