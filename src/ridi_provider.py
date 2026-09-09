@@ -81,9 +81,8 @@ SessionProbe = Callable[[Page], bool]
 
 @dataclass(frozen=True)
 class RidiDiscoveredChapter:
-    """One chapter explicitly exposed by the RIDI work page with a viewer URL."""
-
-    number: int
+    """One RIDI viewable item explicitly exposed by the work page."""
+    number: int | float
     title: str
     viewer_url: str
 
@@ -228,6 +227,13 @@ _RIDI_BLOB_CAPTURE_INIT_SCRIPT = r"""
     }
   }
 
+  function detectGenericImageMime(buffer) {
+    const bytes = new Uint8Array(buffer);
+    if (bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+      return 'image/jpeg';
+    }
+    return null;
+  }
   URL.createObjectURL = function(value) {
     const objectUrl = originalCreateObjectURL(value);
     if (value instanceof Blob && typeof value.type === 'string' && value.type.startsWith('image/')) {
@@ -245,6 +251,37 @@ _RIDI_BLOB_CAPTURE_INIT_SCRIPT = r"""
         scanImages();
         maybeDeliver(record);
       }).catch(() => {});
+      setTimeout(scanImages, 0);
+      setTimeout(scanImages, 5);
+      setTimeout(scanImages, 25);
+      setTimeout(scanImages, 100);
+    } else if (
+      value instanceof Blob &&
+      typeof value.type === 'string' &&
+      value.type === 'application/octet-stream'
+    ) {
+      const record = {
+        objectUrl: objectUrl,
+        dataIndex: null,
+        mimeType: value.type,
+        size: value.size,
+        base64: null,
+        delivered: false,
+      };
+      records.set(objectUrl, record);
+      value.arrayBuffer().then((buffer) => {
+        const detectedMime = detectGenericImageMime(buffer);
+        if (!detectedMime) {
+          records.delete(objectUrl);
+          return;
+        }
+        record.mimeType = detectedMime;
+        record.base64 = toBase64(buffer);
+        scanImages();
+        maybeDeliver(record);
+      }).catch(() => {
+        records.delete(objectUrl);
+      });
       setTimeout(scanImages, 0);
       setTimeout(scanImages, 5);
       setTimeout(scanImages, 25);
@@ -548,9 +585,11 @@ def _is_ridi_login_url(url: Optional[str]) -> bool:
 def discover_ridi_chapters(page: Page, work_url: str) -> RidiDiscoveryResult:
     """Discover only chapters with an explicit /books/<id>/view link on a RIDI work page.
 
-    Paid/unavailable rows without a viewer link are intentionally ignored. Chapter
-    identity comes from the same ``.table_wrapper`` that owns the viewer link; link
-    order is never used to infer a chapter number.
+    Paid/unavailable rows without a viewer link are intentionally ignored. Numbered
+    chapter identity comes from the same ``.table_wrapper`` that owns the viewer link;
+    link order is not used to infer numbered chapter identities. The narrowly recognized
+    ``시즌<n> 후기`` row is the sole exception: it is placed at the immediately preceding
+    numbered chapter plus 0.5.
     """
     if not is_ridi_title_url(work_url):
         raise ValueError(f"Unsupported RIDI work URL: {work_url!r}")
@@ -566,13 +605,28 @@ def discover_ridi_chapters(page: Page, work_url: str) -> RidiDiscoveryResult:
     () => {
       const title = (document.querySelector('h1')?.innerText || '').trim();
       const chapters = [];
+      let previousNumberedChapter = null;
       for (const link of document.querySelectorAll('a[href*="/books/"][href*="/view"]')) {
         const row = link.closest('.table_wrapper');
         if (!row) continue;
         const text = (row.innerText || row.textContent || '').replace(/\s+/g, ' ').trim();
+
         const match = text.match(/(\d+)화/);
-        if (!match) continue;
-        chapters.push({number: Number(match[1]), title: `${match[1]}화`, viewerUrl: link.href});
+        if (match) {
+          const number = Number(match[1]);
+          previousNumberedChapter = number;
+          chapters.push({number, title: `${match[1]}화`, viewerUrl: link.href});
+          continue;
+        }
+
+        const seasonReview = text.match(/시즌\s*(\d+)\s*후기/);
+        if (seasonReview && previousNumberedChapter !== null) {
+          chapters.push({
+            number: previousNumberedChapter + 0.5,
+            title: `시즌${seasonReview[1]} 후기`,
+            viewerUrl: link.href,
+          });
+        }
       }
       return {title, chapters};
     }
@@ -583,8 +637,8 @@ def discover_ridi_chapters(page: Page, work_url: str) -> RidiDiscoveryResult:
     if not title:
         raise RidiProviderError("RIDI work page did not expose a title in h1")
 
-    by_number: Dict[int, RidiDiscoveredChapter] = {}
-    by_url: Dict[str, int] = {}
+    by_number: Dict[int | float, RidiDiscoveredChapter] = {}
+    by_url: Dict[str, int | float] = {}
     raw_chapters = payload.get("chapters") or []
     if not isinstance(raw_chapters, list):
         raise RidiProviderError("RIDI work discovery returned an invalid chapter list")
@@ -592,13 +646,15 @@ def discover_ridi_chapters(page: Page, work_url: str) -> RidiDiscoveryResult:
         if not isinstance(item, dict):
             raise RidiProviderError("RIDI work discovery returned an invalid chapter entry")
         try:
-            number = int(item["number"])
+            raw_number = float(item["number"])
+            number = int(raw_number) if raw_number.is_integer() else raw_number
             viewer_url = str(item["viewerUrl"])
         except (KeyError, TypeError, ValueError) as exc:
             raise RidiProviderError("RIDI work discovery returned an invalid chapter entry") from exc
         if number <= 0 or not is_ridi_chapter_url(viewer_url):
             raise RidiProviderError("RIDI work discovery returned an invalid chapter identity")
-        chapter = RidiDiscoveredChapter(number, str(item.get("title") or f"{number}화"), viewer_url)
+        default_title = f"{number:g}화" if raw_number.is_integer() else f"{number:g}"
+        chapter = RidiDiscoveredChapter(number, str(item.get("title") or default_title), viewer_url)
         existing = by_number.get(number)
         if existing and existing.viewer_url != viewer_url:
             raise RidiProviderError(f"RIDI chapter {number} has conflicting viewer URLs")

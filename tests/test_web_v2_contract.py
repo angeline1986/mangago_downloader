@@ -135,6 +135,14 @@ class WebV2ContractTests(unittest.TestCase):
         self.assertIn("function visibleComixSources()", app_js)
         self.assertIn("#page-comix .comix-source-filter {", css)
 
+    def test_ridi_discovery_contract_supports_season_review_half_step(self):
+        provider = (Path(__file__).resolve().parents[1] / "src" / "ridi_provider.py").read_text(encoding="utf-8")
+        self.assertIn(r"const match = text.match(/(\d+)화/);", provider)
+        self.assertIn(r"const seasonReview = text.match(/시즌\s*(\d+)\s*후기/);", provider)
+        self.assertIn("previousNumberedChapter + 0.5", provider)
+        self.assertIn('raw_number = float(item["number"])', provider)
+        self.assertIn('number = int(raw_number) if raw_number.is_integer() else raw_number', provider)
+
     def test_post_ridi_chapters_returns_discovered_viewer_chapters(self):
         fake_result = types.SimpleNamespace(
             work_url="https://ridibooks.com/books/4895003169",

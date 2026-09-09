@@ -104,6 +104,25 @@ class RidiDiscoveryTests(unittest.TestCase):
         self.assertEqual(result.chapters[1].viewer_url, "https://ridibooks.com/books/4895003199/view")
         page.goto.assert_called_once()
 
+    def test_accepts_season_review_as_half_step_after_numbered_chapter(self):
+        page = unittest.mock.MagicMock()
+        page.url = "https://ridibooks.com/books/4895003841"
+        page.evaluate.return_value = {
+            "title": "죽어 마땅한 것들",
+            "chapters": [
+                {"number": 38, "title": "38화", "viewerUrl": "https://ridibooks.com/books/4895003951/view"},
+                {"number": 38.5, "title": "시즌1 후기", "viewerUrl": "https://ridibooks.com/books/4895003959/view"},
+            ],
+        }
+
+        result = discover_ridi_chapters(page, "https://ridibooks.com/books/4895003841")
+
+        self.assertEqual([ch.number for ch in result.chapters], [38, 38.5])
+        self.assertIsInstance(result.chapters[0].number, int)
+        self.assertIsInstance(result.chapters[1].number, float)
+        self.assertEqual(result.chapters[1].title, "시즌1 후기")
+        self.assertEqual(result.chapters[1].viewer_url, "https://ridibooks.com/books/4895003959/view")
+
     def test_rejects_conflicting_number_mapping(self):
         page = unittest.mock.MagicMock()
         page.url = "https://ridibooks.com/books/4895003169"
