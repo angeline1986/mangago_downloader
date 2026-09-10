@@ -542,6 +542,6 @@ input.setting-control[list] {
 #page-ridi .ridi-offline {
   color: #94a3b8;
 }
-#page-ridi .ridi-offline::before {
+#page-ridi .ridi-session-dot.ridi-offline {
   background: #94a3b8;
 }

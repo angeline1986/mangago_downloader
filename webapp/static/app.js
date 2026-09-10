@@ -209,11 +209,13 @@ function updateRidiSelectionUI(){
 
 function renderRidiSessionStatus(status){
   const label=$('#ridiSessionStatus');
+  const dot=$('.ridi-session-dot');
   if(!label)return;
   const running=Boolean(status&&status.chrome_running);
   const authenticated=Boolean(status&&status.authenticated);
   label.dataset.state=authenticated?'connected':running?'login':'offline';
   label.classList.toggle('ridi-offline', !running);
+  if(dot) dot.classList.toggle('ridi-offline', !running);
   label.textContent=authenticated
     ? 'Online'
     : ((!running?'Offline':(status&&status.message))||(running?'Chrome RIDI aberto. Faça login no RIDI.':'Chrome RIDI não iniciado.'));
