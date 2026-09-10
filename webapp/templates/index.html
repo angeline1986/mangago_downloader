@@ -17,15 +17,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="status"><i></i><span id="globalStatus">Pronto</span></span>
-        <button
-          class="shutdown-button"
-          id="shutdownButton"
-          type="button"
-          title="Finalizar aplicação"
-        >
-          Finalizar aplicação
-        </button>
+        <span id="globalStatus" hidden>Pronto</span>
         <button class="icon-button" id="themeToggle" title="Alternar tema" aria-label="Alternar tema">☾</button>
       </div>
     </header>
@@ -39,6 +31,7 @@
         <button class="nav-item" data-page="ridi"><span>▤</span> RIDI</button>
         <button class="nav-item" data-page="downloads"><span>↓</span> Downloads <em id="downloadBadge"></em></button>
         <button class="nav-item" data-page="settings"><span>⚙</span> Ajustes</button>
+        <button class="nav-item shutdown-nav-item" id="shutdownButton" type="button" title="Encerrar"><span>⏻</span> Encerrar</button>
       </nav>
       <div class="sidebar-footer">
         <div>Downloads: <b id="downloadCount">0</b></div>
@@ -59,9 +52,29 @@
           </div>
         </div>
 
-        <div class="search-bar">
-          <input id="searchInput" type="text" placeholder="Digite o nome do mangá…" autocomplete="off" />
-          <button class="primary" id="searchButton">Buscar</button>
+        <div class="saved-work-choice-grid saved-work-choice-grid--mangago" data-ui="patch18-ui-refinements">
+          <div class="saved-work-choice-card saved-work-choice-card--saved">
+            <label class="saved-work-choice-title" for="mangagoSavedWork">Obras salvas</label>
+            <div class="saved-work-choice-help">Acesso rápido às obras recorrentes.</div>
+            <input
+              class="setting-control wide"
+              id="mangagoSavedWork"
+              type="text"
+              list="mangagoSavedWorkOptions"
+              placeholder="Digite ou selecione uma obra..."
+              autocomplete="off"
+            />
+            <datalist id="mangagoSavedWorkOptions"></datalist>
+          </div>
+          <div class="saved-work-choice-card saved-work-choice-card--manual">
+            <div class="saved-work-choice-title">Busca manual</div>
+            <div class="saved-work-choice-help">Pesquise uma obra que não está na lista salva.</div>
+            <div class="search-bar saved-work-manual-row">
+              <input id="searchInput" type="text" placeholder="Digite o nome do mangá…" autocomplete="off" />
+              <datalist id="mangagoSavedUrlOptions"></datalist>
+              <button class="primary" id="searchButton">Buscar</button>
+            </div>
+          </div>
         </div>
         <div class="hint" id="searchHint">Os resultados aparecerão abaixo.</div>
 
@@ -87,31 +100,49 @@
         <div class="comix-flow">
 
           <section class="comix-step">
-            <div class="comix-step-heading">
+            <div class="comix-step-heading comix-step-heading--with-session">
               <span class="comix-step-number">1</span>
               <div>
                 <h2>Obra</h2>
                 <p>Use a página principal da obra no RIDI, sem URL de capítulo.</p>
               </div>
-            </div>
-
-            <div class="ridi-session-row">
-              <div>
-                <strong>Sessão RIDI</strong>
+              <div class="ridi-heading-session" data-ui="patch16-saved-works-layout">
+                <span class="ridi-session-dot" aria-hidden="true"></span>
                 <span class="muted" id="ridiSessionStatus">Verificando Chrome RIDI…</span>
+                <button class="secondary" id="ridiLoginButton">Iniciar RIDI</button>
               </div>
-              <button class="secondary" id="ridiLoginButton">Iniciar login RIDI</button>
             </div>
 
-            <div class="comix-load-row">
-              <input
-                class="setting-control wide"
-                id="ridiTitleUrl"
-                type="url"
-                placeholder="https://ridibooks.com/books/4895003169"
-                autocomplete="off"
-              />
-              <button class="primary" id="ridiLoadButton">Listar capítulos</button>
+            <div class="saved-work-choice-grid" data-ui="patch17-saved-works-datalist">
+              <div class="saved-work-choice-card saved-work-choice-card--saved">
+                <label class="saved-work-choice-title" for="ridiSavedWork">Obras salvas</label>
+                <div class="saved-work-choice-help">Acesso rápido às recorrentes.</div>
+                <input
+                  class="setting-control wide"
+                  id="ridiSavedWork"
+                  type="text"
+                  list="ridiSavedWorkOptions"
+                  placeholder="Digite ou selecione uma obra..."
+                  autocomplete="off"
+                />
+                <datalist id="ridiSavedWorkOptions"></datalist>
+              </div>
+              <div class="saved-work-choice-card saved-work-choice-card--manual">
+                <label class="saved-work-choice-title" for="ridiTitleUrl">URL manual</label>
+                <div class="saved-work-choice-help">Informe outra obra sem alterar a lista.</div>
+                <div class="comix-load-row saved-work-manual-row">
+                  <input
+                    class="setting-control wide"
+                    id="ridiTitleUrl"
+                    type="url"
+                    list="ridiSavedUrlOptions"
+                    placeholder="https://ridibooks.com/books/4895003169"
+                    autocomplete="off"
+                  />
+                  <datalist id="ridiSavedUrlOptions"></datalist>
+                  <button class="primary" id="ridiLoadButton">Desvendar</button>
+                </div>
+              </div>
             </div>
             <p class="muted">O Chrome dedicado deve permanecer aberto durante a descoberta e os downloads.</p>
           </section>
@@ -177,7 +208,7 @@
 
             <div class="comix-download-bar">
               <span class="muted" id="ridiSelectedCount">Nenhum capítulo selecionado.</span>
-              <button class="primary" id="ridiDownloadButton">Baixar capítulos</button>
+              <button class="primary" id="ridiDownloadButton">Download</button>
             </div>
           </section>
 
@@ -201,15 +232,36 @@
               </div>
             </div>
 
-            <div class="comix-load-row">
-              <input
-                class="setting-control wide"
-                id="comixTitleUrl"
-                type="url"
+            <div class="saved-work-choice-grid" data-ui="patch17-saved-works-datalist">
+              <div class="saved-work-choice-card saved-work-choice-card--saved">
+                <label class="saved-work-choice-title" for="comixSavedWork">Obras salvas</label>
+                <div class="saved-work-choice-help">Acesso rápido às recorrentes.</div>
+                <input
+                  class="setting-control wide"
+                  id="comixSavedWork"
+                  type="text"
+                  list="comixSavedWorkOptions"
+                  placeholder="Digite ou selecione uma obra..."
+                  autocomplete="off"
+                />
+                <datalist id="comixSavedWorkOptions"></datalist>
+              </div>
+              <div class="saved-work-choice-card saved-work-choice-card--manual">
+                <label class="saved-work-choice-title" for="comixTitleUrl">URL manual</label>
+                <div class="saved-work-choice-help">Informe outra obra sem alterar a lista.</div>
+                <div class="comix-load-row saved-work-manual-row">
+                  <input
+                    class="setting-control wide"
+                    id="comixTitleUrl"
+                    type="url"
+                    list="comixSavedUrlOptions"
                 placeholder="https://comix.to/title/..."
                 autocomplete="off"
               />
-              <button class="primary" id="comixLoadButton">Listar capítulos</button>
+                  <datalist id="comixSavedUrlOptions"></datalist>
+                  <button class="primary" id="comixLoadButton">Desvendar</button>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -328,7 +380,7 @@
               </span>
 
               <button class="primary" id="comixDownloadButton">
-                Baixar capítulos
+                Download
               </button>
             </div>
           </section>

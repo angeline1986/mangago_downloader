@@ -4,6 +4,59 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 
 function toast(message){ const el=$('#toast'); el.textContent=message; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),2600); }
 function setBusy(text){ $('#globalStatus').textContent=text; $('#footerState').textContent=text; }
+
+// patch17-saved-works-datalist
+const savedWorksByProvider={comix:[],mangago:[],ridi:[]};
+
+function findSavedWork(provider,{name='',url=''}={}){
+  const works=savedWorksByProvider[provider]||[];
+  const normalizedName=String(name||'').trim().toLocaleLowerCase();
+  const normalizedUrl=String(url||'').trim();
+  if(normalizedUrl){
+    const byUrl=works.find(work=>String(work.url||'').trim()===normalizedUrl);
+    if(byUrl)return byUrl;
+  }
+  if(normalizedName){
+    return works.find(work=>String(work.name||'').trim().toLocaleLowerCase()===normalizedName)||null;
+  }
+  return null;
+}
+
+function fillSavedWorkDatalists(provider,works){
+  const nameList=$(`#${provider}SavedWorkOptions`);
+  if(nameList){
+    nameList.innerHTML='';
+    works.forEach(work=>{
+      const option=document.createElement('option');
+      option.value=work.name;
+      nameList.appendChild(option);
+    });
+  }
+  const urlList=$(`#${provider}SavedUrlOptions`);
+  if(urlList){
+    urlList.innerHTML='';
+    works.forEach(work=>{
+      const option=document.createElement('option');
+      option.value=work.url;
+      option.label=`★ ${work.name}`;
+      urlList.appendChild(option);
+    });
+  }
+}
+
+async function loadSavedWorks(provider){
+  try{
+    const data=await api(`/api/saved-works?provider=${encodeURIComponent(provider)}`);
+    const works=Array.isArray(data.works)?data.works:[];
+    savedWorksByProvider[provider]=works;
+    fillSavedWorkDatalists(provider,works);
+  }catch(e){
+    savedWorksByProvider[provider]=[];
+    fillSavedWorkDatalists(provider,[]);
+    console.error(e);
+  }
+}
+
 async function api(url, options={}){ const response=await fetch(url,{headers:{'Content-Type':'application/json',...(options.headers||{})},...options}); const body=await response.json().catch(()=>({})); if(!response.ok) throw new Error(body.error||`Erro HTTP ${response.status}`); return body; }
 
 function navigate(page){ state.page=page; $$('.page').forEach(x=>x.classList.toggle('active',x.id===`page-${page}`)); $$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===page)); if(page==='downloads') refreshDownloads(); if(page==='settings') loadSettings(); }
@@ -64,9 +117,42 @@ async function shutdownApplication(){
 
 $('#shutdownButton').addEventListener('click',shutdownApplication);
 
-$$('.mode-switch button').forEach(btn=>btn.addEventListener('click',()=>{ $$('.mode-switch button').forEach(x=>x.classList.remove('selected')); btn.classList.add('selected'); state.searchMode=btn.dataset.mode; $('#searchInput').placeholder=state.searchMode==='title'?'Digite o nome do mangá…':'Cole a URL do mangá no Mangago…'; $('#searchButton').textContent=state.searchMode==='title'?'Buscar':'Abrir'; }));
+function syncMangagoSearchMode(){
+  const searchInput=$('#searchInput');
+  const urlMode=state.searchMode==='url';
 
-$('#searchButton').addEventListener('click', runSearch); $('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch();});
+  searchInput.placeholder=urlMode
+    ? 'Digite ou selecione uma URL do Mangago…'
+    : 'Digite o nome do mangá…';
+  $('#searchButton').textContent=urlMode?'Abrir':'Buscar';
+
+  if(urlMode){
+    searchInput.setAttribute('list','mangagoSavedUrlOptions');
+  }else{
+    searchInput.removeAttribute('list');
+  }
+}
+
+$$('.mode-switch button').forEach(btn=>btn.addEventListener('click',()=>{
+  $$('.mode-switch button').forEach(x=>x.classList.remove('selected'));
+  btn.classList.add('selected');
+  state.searchMode=btn.dataset.mode;
+  syncMangagoSearchMode();
+}));
+
+$('#searchButton').addEventListener('click', runSearch);
+$('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch();});
+$('#searchInput').addEventListener('change',e=>{
+  if(state.searchMode!=='url')return;
+  const work=findSavedWork('mangago',{url:e.target.value});
+  if(work)$('#mangagoSavedWork').value=work.name;
+});
+$('#mangagoSavedWork').addEventListener('change',e=>{
+  const work=findSavedWork('mangago',{name:e.target.value});
+  if(work)openManga(work.url);
+});
+syncMangagoSearchMode();
+loadSavedWorks('mangago');
 const comixState = {
   chapters: [],
   selected: new Set(),
@@ -127,7 +213,9 @@ function renderRidiSessionStatus(status){
   const running=Boolean(status&&status.chrome_running);
   const authenticated=Boolean(status&&status.authenticated);
   label.dataset.state=authenticated?'connected':running?'login':'offline';
-  label.textContent=(status&&status.message)||(authenticated?'RIDI conectado.':running?'Chrome RIDI aberto. Faça login no RIDI.':'Chrome RIDI não iniciado.');
+  label.textContent=authenticated
+    ? 'Online'
+    : ((status&&status.message)||(running?'Chrome RIDI aberto. Faça login no RIDI.':'Chrome RIDI não iniciado.'));
 }
 
 async function refreshRidiSessionStatus({silent=false}={}){
@@ -150,7 +238,7 @@ async function startRidiLogin(){
     const status=await api('/api/ridi/session/start',{method:'POST',body:'{}'});
     renderRidiSessionStatus(status);
     if(status.authenticated){
-      toast('RIDI conectado.');
+      toast('Online');
     }else if(status.chrome_running){
       toast('Chrome RIDI aberto. Faça login e mantenha a janela aberta.');
     }else{
@@ -238,6 +326,19 @@ async function startRidiDownload(){
 }
 
 $('#ridiLoginButton').addEventListener('click',startRidiLogin);
+$('#ridiSavedWork').addEventListener('change',e=>{
+  const typedName=e.target.value.trim();
+  const work=findSavedWork('ridi',{name:typedName});
+  $('#ridiTitle').value=work?.name||typedName;
+  if(work)$('#ridiTitleUrl').value=work.url;
+});
+$('#ridiTitleUrl').addEventListener('change',e=>{
+  const work=findSavedWork('ridi',{url:e.target.value});
+  if(!work)return;
+  $('#ridiSavedWork').value=work.name;
+  $('#ridiTitle').value=work.name;
+});
+loadSavedWorks('ridi');
 $('#ridiLoadButton').addEventListener('click',loadRidiChapters);
 $('#ridiDownloadButton').addEventListener('click',startRidiDownload);
 $('#ridiSelectAll').addEventListener('click',()=>{ridiState.chapters.forEach(ch=>ridiState.selected.add(ch.url));renderRidiChapters();});
@@ -245,6 +346,19 @@ $('#ridiSelectNone').addEventListener('click',()=>{ridiState.selected.clear();re
 refreshRidiSessionStatus({silent:true});
 
 $('#comixDownloadButton').addEventListener('click', startComixDownload);
+$('#comixSavedWork').addEventListener('change',e=>{
+  const typedName=e.target.value.trim();
+  const work=findSavedWork('comix',{name:typedName});
+  $('#comixTitle').value=work?.name||typedName;
+  if(work)$('#comixTitleUrl').value=work.url;
+});
+$('#comixTitleUrl').addEventListener('change',e=>{
+  const work=findSavedWork('comix',{url:e.target.value});
+  if(!work)return;
+  $('#comixSavedWork').value=work.name;
+  $('#comixTitle').value=work.name;
+});
+loadSavedWorks('comix');
 $('#comixLoadButton').addEventListener('click', loadComixChapters);
 $('#comixSelectAll').addEventListener('click', () => {
   visibleComixChapters().forEach(ch => comixState.selected.add(ch.url));

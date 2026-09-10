@@ -426,3 +426,115 @@ button,input,select{font:inherit}.app-shell{min-height:100vh;display:grid;grid-t
     width:100%;
   }
 }
+
+/* patch16-saved-works-layout */
+.saved-work-choice-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(420px, 1.28fr);
+  gap: 16px;
+  margin-top: 18px;
+  align-items: stretch;
+}
+
+.saved-work-choice-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 15px 16px;
+  background: var(--surface, #fff);
+}
+
+.saved-work-choice-card--manual {
+  background: var(--surface-soft, #f8f9fc);
+}
+
+.saved-work-choice-title {
+  display: block;
+  margin: 0 0 4px;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.saved-work-choice-help {
+  min-height: 1.2em;
+  margin: 0 0 11px;
+  color: var(--muted, #7b8498);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.saved-work-manual-row {
+  margin: 0;
+}
+
+.comix-step-heading--with-session {
+  align-items: center;
+}
+
+.ridi-heading-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.ridi-heading-session #ridiSessionStatus {
+  display: inline;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.ridi-session-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 999px;
+  background: #22a06b;
+}
+
+.ridi-heading-session #ridiLoginButton {
+  margin-left: 4px;
+}
+
+@media (max-width: 860px) {
+  .saved-work-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .comix-step-heading--with-session {
+    flex-wrap: wrap;
+  }
+
+  .ridi-heading-session {
+    width: 100%;
+    margin: 10px 0 0 40px;
+    white-space: normal;
+  }
+}
+
+/* patch19-ui-color-status-mangago */
+.saved-work-choice-card--saved {
+  border-color: color-mix(in srgb, var(--primary, #5b4bdb) 26%, transparent);
+  background: color-mix(in srgb, var(--primary, #5b4bdb) 8%, transparent);
+}
+
+.saved-work-choice-card--saved .saved-work-choice-title {
+  color: var(--primary, #5b4bdb);
+}
+
+.saved-work-choice-card--manual {
+  border-color: color-mix(in srgb, var(--primary, #5b4bdb) 16%, transparent);
+  background: color-mix(in srgb, var(--primary, #5b4bdb) 3%, transparent);
+}
+
+.sidebar .shutdown-nav-item {
+  margin-top: 24px;
+}
+
+input.setting-control[list] {
+  appearance: auto;
+  -webkit-appearance: auto;
+}
+

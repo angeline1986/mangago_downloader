@@ -171,7 +171,7 @@ class WebV2ContractTests(unittest.TestCase):
         self.assertIn('id="ridiTitle"', html)
         self.assertIn('id="ridiFolderPattern"', html)
         self.assertIn('value="Ch. 01"', html)
-        self.assertIn('id="ridiDownloadButton">Baixar capítulos</button>', html)
+        self.assertIn('id="ridiDownloadButton">Download</button>', html)
         self.assertIn('id="ridiConfigArrow"', html)
 
     def test_ridi_reuses_comix_visual_contract(self):
@@ -613,5 +613,59 @@ class WebV2ContractTests(unittest.TestCase):
         self.assertIn("/api/ridi/session", js)
 
 
+    def test_saved_works_read_only_contract(self):
+        from src.saved_works import list_saved_works
+
+        self.assertEqual(len(list_saved_works("comix")), 6)
+        self.assertEqual(len(list_saved_works("mangago")), 5)
+        self.assertEqual(len(list_saved_works("ridi")), 1)
+
+        with self.assertRaises(ValueError):
+            list_saved_works("unknown")
+
+        html = (Path(server.TEMPLATE_DIR) / "index.html").read_text(encoding="utf-8")
+        js = (Path(server.STATIC_DIR) / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="mangagoSavedWork"', html)
+        self.assertIn('id="comixSavedWork"', html)
+        self.assertIn('id="ridiSavedWork"', html)
+        self.assertIn("/api/saved-works?provider=", js)
+        self.assertIn("findSavedWork('mangago',{name:e.target.value})", js)
+        self.assertIn('list="ridiSavedWorkOptions"', html)
+        self.assertIn('list="ridiSavedUrlOptions"', html)
+        self.assertIn('list="comixSavedWorkOptions"', html)
+        self.assertIn('list="comixSavedUrlOptions"', html)
+        self.assertIn('list="mangagoSavedWorkOptions"', html)
+        self.assertIn('id="mangagoSavedUrlOptions"', html)
+        self.assertIn("searchInput.setAttribute('list','mangagoSavedUrlOptions')", js)
+        self.assertIn("searchInput.removeAttribute('list')", js)
+        self.assertIn("findSavedWork('mangago',{url:e.target.value})", js)
+        self.assertIn('class="saved-work-choice-grid', html)
+        self.assertIn('class="ridi-heading-session"', html)
+        self.assertIn('id="ridiLoginButton">Iniciar RIDI</button>', html)
+        self.assertIn('id="ridiLoadButton">Desvendar</button>', html)
+        self.assertIn('id="comixLoadButton">Desvendar</button>', html)
+        self.assertRegex(
+            html,
+            r'id=["\']comixDownloadButton["\'][^>]*>\s*Download\s*</button>',
+        )
+        self.assertIn('id="shutdownButton"', html)
+        self.assertIn('<span>⏻</span> Encerrar', html)
+        self.assertIn('class="nav-item shutdown-nav-item"', html)
+        self.assertIn('id="mangagoSavedWorkOptions"', html)
+        css = (Path(server.STATIC_DIR) / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('input.setting-control[list]', css)
+        self.assertIn('id="globalStatus" hidden', html)
+        self.assertIn("label.textContent=authenticated", js)
+        self.assertIn("? 'Online'", js)
+        self.assertIn("option.label=`★ ${work.name}`", js)
+        self.assertIn('data-ui="patch18-ui-refinements"', html)
+
+
 if __name__ == '__main__':
     unittest.main()
+
+
+# patch18-ui-refinements
+
+# patch19-ui-color-status-mangago

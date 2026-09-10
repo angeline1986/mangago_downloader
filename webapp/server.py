@@ -32,6 +32,7 @@ from src.ridi_provider import (
 )
 from src.models import Chapter, Manga
 from src.search import get_manga_details, search_manga
+from src.saved_works import list_saved_works
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -382,6 +383,15 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/ridi/session":
             self._json(get_ridi_session_status())
+            return
+        if path == "/api/saved-works":
+            provider = (parse_qs(parsed.query).get("provider") or [""])[0].strip().lower()
+            try:
+                self._json({"provider": provider, "works": list_saved_works(provider)})
+            except ValueError as exc:
+                self._json({"error": str(exc)}, 400)
+            except Exception as exc:
+                self._json({"error": str(exc)}, 500)
             return
         if path == "/api/search":
             query = (parse_qs(parsed.query).get("q") or [""])[0].strip()
