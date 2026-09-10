@@ -538,3 +538,10 @@ input.setting-control[list] {
   -webkit-appearance: auto;
 }
 
+/* RIDI: offline is a neutral inactive state, not success/error. */
+#page-ridi .ridi-offline {
+  color: #94a3b8;
+}
+#page-ridi .ridi-offline::before {
+  background: #94a3b8;
+}

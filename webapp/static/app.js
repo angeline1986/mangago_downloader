@@ -213,9 +213,10 @@ function renderRidiSessionStatus(status){
   const running=Boolean(status&&status.chrome_running);
   const authenticated=Boolean(status&&status.authenticated);
   label.dataset.state=authenticated?'connected':running?'login':'offline';
+  label.classList.toggle('ridi-offline', !running);
   label.textContent=authenticated
     ? 'Online'
-    : ((status&&status.message)||(running?'Chrome RIDI aberto. Faça login no RIDI.':'Chrome RIDI não iniciado.'));
+    : ((!running?'Offline':(status&&status.message))||(running?'Chrome RIDI aberto. Faça login no RIDI.':'Chrome RIDI não iniciado.'));
 }
 
 async function refreshRidiSessionStatus({silent=false}={}){

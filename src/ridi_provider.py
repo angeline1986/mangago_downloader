@@ -379,26 +379,37 @@ def _ridi_chrome_executable() -> Path:
 
 
 def get_ridi_session_status(*, cdp_url: str = RIDI_CDP_URL) -> dict:
-    """Inspect the externally owned Chrome session without exposing cookie values."""
+    """Inspect the externally owned Chrome session without creating or navigating pages."""
+    playwright = None
     try:
-        with ridi_cdp_browser_page(cdp_url=cdp_url) as page:
-            context = page.context
-            cookies = context.cookies([RIDI_HOME_URL])
-            authenticated = any(
-                cookie.get("name") == "ridi_auth" and cookie.get("domain", "").endswith("ridibooks.com")
-                for cookie in cookies
-            )
-            return {
-                "chrome_running": True,
-                "authenticated": authenticated,
-                "message": "RIDI conectado." if authenticated else "Chrome RIDI aberto. Faça login no RIDI.",
-            }
+        playwright = sync_playwright().start()
+        browser = playwright.chromium.connect_over_cdp(cdp_url)
+        if not browser.contexts:
+            raise RidiProviderError("Connected Chrome did not expose a browser context")
+
+        context = browser.contexts[0]
+        cookies = context.cookies([RIDI_HOME_URL])
+        authenticated = any(
+            cookie.get("name") == "ridi_auth" and cookie.get("domain", "").endswith("ridibooks.com")
+            for cookie in cookies
+        )
+        return {
+            "chrome_running": True,
+            "authenticated": authenticated,
+            "message": "RIDI conectado." if authenticated else "Chrome RIDI aberto. Faça login no RIDI.",
+        }
     except Exception:
         return {
             "chrome_running": False,
             "authenticated": False,
             "message": "Chrome RIDI não iniciado.",
         }
+    finally:
+        if playwright is not None:
+            try:
+                playwright.stop()
+            except Exception:
+                pass
 
 
 def start_ridi_chrome(

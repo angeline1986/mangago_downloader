@@ -559,18 +559,22 @@ class RidiCaptureResultTests(unittest.TestCase):
         fake_context.cookies.return_value = [
             {"name": "ridi_auth", "domain": ".ridibooks.com", "value": "secret"},
         ]
-        fake_page = unittest.mock.MagicMock()
-        fake_page.context = fake_context
-        manager = unittest.mock.MagicMock()
-        manager.__enter__.return_value = fake_page
-        manager.__exit__.return_value = False
 
-        with patch("src.ridi_provider.ridi_cdp_browser_page", return_value=manager):
+        fake_browser = unittest.mock.MagicMock()
+        fake_browser.contexts = [fake_context]
+
+        fake_playwright = unittest.mock.MagicMock()
+        fake_playwright.chromium.connect_over_cdp.return_value = fake_browser
+
+        with patch("src.ridi_provider.sync_playwright") as sync_playwright:
+            sync_playwright.return_value.start.return_value = fake_playwright
             status = get_ridi_session_status()
 
         self.assertTrue(status["chrome_running"])
         self.assertTrue(status["authenticated"])
         self.assertNotIn("secret", repr(status))
+        fake_context.new_page.assert_not_called()
+        fake_playwright.stop.assert_called_once_with()
 
     def test_start_ridi_chrome_does_not_launch_second_instance_when_cdp_is_running(self):
         running = {
