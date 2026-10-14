@@ -677,21 +677,7 @@ async def _download_comix_chapter_async(
     callback = progress_callback or getattr(downloader, "progress_callback", None)
 
 
-    pattern = (getattr(chapter, "folder_pattern", None) or "Ch. 01").strip()
-    number = chapter.number
-    number_text = f"{number:g}"
-
-    import re
-    match = re.search(r"(0*1)", pattern)
-    if match:
-        width = len(match.group(1))
-        if float(number).is_integer():
-            formatted_number = str(int(number)).zfill(width)
-        else:
-            formatted_number = number_text
-        folder_name = pattern[:match.start()] + formatted_number + pattern[match.end():]
-    else:
-        folder_name = f"Ch.{number_text}"
+    folder_name = f"{chapter.number:g}"
 
     chapter_dir = str(
         chapter_image_dir(

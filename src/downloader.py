@@ -35,7 +35,7 @@ logger = logging.getLogger("mangago.engine")
 
 
 def _chapter_dir_name(chapter: Chapter) -> str:
-    return sanitize_filename(f"Ch. {chapter.number:g}")
+    return sanitize_filename(f"{chapter.number:g}")
 
 
 def _page_number_from_url(url: str) -> Optional[int]:

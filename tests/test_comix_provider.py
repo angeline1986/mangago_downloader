@@ -126,7 +126,7 @@ class ComixProviderTests(unittest.TestCase):
 
             import src.comix_provider as provider
 
-            expected = Path(tmp) / "comix" / "Emergency Youth Record Book" / "Ch. 2"
+            expected = Path(tmp) / "comix" / "Emergency Youth Record Book" / "2"
 
             original_async = provider._download_comix_chapter_async
             try:
