@@ -90,3 +90,34 @@ def wait_for_response(page: Page, responses: dict, image_url: str,
             return response
         page.wait_for_timeout(100)
     raise LezhinReaderError(f"No image response was observed for cut {index}")
+
+
+def read_blob_cut_png(page: Page, index: int) -> bytes:
+    """Export an authorized, already decoded blob image without HTTP refetch."""
+    import base64
+
+    result = page.locator(f'[data-cut-index="{index}"]').first.evaluate(r"""async el => {
+      const image = el.matches('img') ? el : el.querySelector('img');
+      if (!image || !image.currentSrc.startsWith('blob:') ||
+          !image.complete || !image.naturalWidth || !image.naturalHeight)
+        throw new Error('Blob image not ready');
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('2D canvas unavailable');
+      context.drawImage(image, 0, 0);
+      const blob = await new Promise((resolve, reject) =>
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('PNG encoding failed')), 'image/png'));
+      const array = new Uint8Array(await blob.arrayBuffer());
+      let binary = '';
+      for (let i = 0; i < array.length; i += 32768)
+        binary += String.fromCharCode(...array.subarray(i, i + 32768));
+      return {data: btoa(binary), width: canvas.width, height: canvas.height};
+    }""")
+    if not isinstance(result, dict) or not result.get('data'):
+        raise LezhinReaderError(f'Blob capture failed for cut {index}')
+    try:
+        return base64.b64decode(result['data'], validate=True)
+    except (ValueError, base64.binascii.Error) as exc:
+        raise LezhinReaderError(f'Invalid blob PNG for cut {index}') from exc

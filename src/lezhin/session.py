@@ -73,9 +73,11 @@ def lezhin_cdp_session(cdp_url: str | None = None) -> Iterator[LezhinSession]:
                 raise LezhinSessionError("Connected Chrome has no browser context")
             context = browser.contexts[0]
             page = next((item for item in context.pages if is_lezhin_url(item.url)), None)
-            owns_page = page is None
             if page is None:
-                page = context.new_page()
+                raise LezhinSessionError(
+                    "Nenhuma aba Lezhin está aberta. Clique em Iniciar Lezhin antes de Desvendar."
+                )
+            owns_page = False
             page.set_default_timeout(15_000)
             session = LezhinSession(browser, context, page, owns_page)
         except LezhinSessionError:

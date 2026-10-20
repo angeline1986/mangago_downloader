@@ -13,7 +13,7 @@ from playwright.sync_api import Page
 from .errors import LezhinCaptureError, LezhinIncompleteError, LezhinReaderError
 from .persistence import PersistedCut, persist_cut
 from .reader import (read_cut_image, read_cut_indexes, require_episode_access,
-                     scroll_to_cut, wait_for_response)
+                     scroll_to_cut, wait_for_response, read_blob_cut_png)
 from .session import lezhin_cdp_session
 from .urls import validate_episode_url
 from .validation import CaptureValidation, validate_capture
@@ -80,16 +80,20 @@ def _capture_observed_page(page: Page, episode_url: str, destination: Path,
         image = read_cut_image(page, index)
         if not image["loaded"] or not image["src"]:
             raise LezhinCaptureError(f"Cut {index} has no decoded image")
-        response = wait_for_response(page, responses, image["src"], timeout_ms, index)
-        if response.status != 200:
-            raise LezhinCaptureError(f"Image response for cut {index} returned HTTP {response.status}")
-        mime = response.headers.get("content-type", "")
-        if not mime.lower().startswith("image/"):
-            raise LezhinCaptureError(f"Cut {index} response did not declare an image MIME type")
-        try:
-            content = response.body()
-        except Exception as exc:
-            raise LezhinCaptureError(f"Could not read image response body for cut {index}") from exc
+        if image["src"].startswith("blob:"):
+            content = read_blob_cut_png(page, index)
+            mime = "image/png"
+        else:
+            response = wait_for_response(page, responses, image["src"], timeout_ms, index)
+            if response.status != 200:
+                raise LezhinCaptureError(f"Image response for cut {index} returned HTTP {response.status}")
+            mime = response.headers.get("content-type", "")
+            if not mime.lower().startswith("image/"):
+                raise LezhinCaptureError(f"Cut {index} response did not declare an image MIME type")
+            try:
+                content = response.body()
+            except Exception as exc:
+                raise LezhinCaptureError(f"Could not read image response body for cut {index}") from exc
         try:
             item = persist_cut(destination, index, content, mime)
         finally:

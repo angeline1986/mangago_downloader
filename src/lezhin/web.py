@@ -6,23 +6,23 @@ import subprocess
 import time
 import urllib.request
 import os
+import sys
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from .session import LEZHIN_HOME_URL, get_lezhin_cdp_url
+from .session import LEZHIN_HOME_URL, get_lezhin_cdp_url, get_lezhin_profile_dir
 from .urls import is_lezhin_url
 
 
 def _profile_path() -> Path:
-    configured = os.environ.get("LEZHIN_CHROME_PROFILE")
-    profile = (Path(configured).expanduser() if configured else
-               Path("/private/tmp/lezhin_pilot_profile_20261020"))
-    profile = profile.resolve()
+    """Compartilha o diretório persistente do módulo session."""
+    profile = get_lezhin_profile_dir().resolve()
     personal_roots = (Path.home() / "Library/Application Support/Google/Chrome",
                       Path.home() / ".config/google-chrome",
                       Path.home() / ".cache/ridibooks_chrome_profile")
-    if any(profile == root.resolve() or root.resolve() in profile.parents for root in personal_roots):
+    if any(profile == root.resolve() or root.resolve() in profile.parents
+           for root in personal_roots):
         raise RuntimeError("O perfil configurado não é exclusivo do Lezhin.")
     return profile
 
@@ -93,10 +93,36 @@ def lezhin_session_status() -> dict:
                 pass
 
 
+def _show_lezhin_chrome() -> None:
+    """Focus the dedicated Lezhin tab only after the explicit Start action."""
+    playwright = None
+    try:
+        playwright = sync_playwright().start()
+        browser = playwright.chromium.connect_over_cdp(get_lezhin_cdp_url(), no_defaults=True)
+        if not browser.contexts:
+            raise RuntimeError("Chrome Lezhin não possui contexto disponível.")
+        context = browser.contexts[0]
+        page = next((p for p in context.pages if is_lezhin_url(p.url)), None)
+        if page is None:
+            page = context.new_page()
+            page.goto(LEZHIN_HOME_URL, wait_until="domcontentloaded", timeout=15000)
+        page.bring_to_front()
+    finally:
+        if playwright is not None:
+            playwright.stop()
+    # No macOS, focusing a tab via CDP does not necessarily activate the app.
+    # Chrome is the user's dedicated browser executable; avoid touching other tabs.
+    if sys.platform == "darwin":
+        subprocess.run(["osascript", "-e", 'tell application "Google Chrome" to activate'],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=3, check=False)
+
+
 def start_lezhin_chrome() -> dict:
     """Start only a dedicated Lezhin profile; never take ownership of other Chrome."""
     current = lezhin_session_status()
     if current["chrome_state"] == "connected":
+        _show_lezhin_chrome()
         current["started"] = False
         return current
     if current["chrome_state"] == "error":
@@ -113,6 +139,7 @@ def start_lezhin_chrome() -> dict:
     while time.monotonic() < deadline:
         status = lezhin_session_status()
         if status["chrome_state"] == "connected":
+            _show_lezhin_chrome()
             status["started"] = True
             return status
         time.sleep(0.25)

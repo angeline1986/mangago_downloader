@@ -32,9 +32,9 @@ def test_lezhin_session_endpoint_reports_provider_status(monkeypatch):
     assert body["session_state"] == "not_verified"
 
 
-def test_chrome_start_uses_exclusive_pilot_profile(monkeypatch):
+def test_chrome_start_uses_exclusive_persistent_profile(monkeypatch):
     monkeypatch.delenv("LEZHIN_CHROME_PROFILE", raising=False)
-    assert str(_profile_path()) == "/private/tmp/lezhin_pilot_profile_20261020"
+    assert _profile_path() == (Path.home() / ".mangago_downloader/lezhin-chrome-profile").resolve()
     monkeypatch.setenv("LEZHIN_CHROME_PROFILE", str(Path.home() / "Library/Application Support/Google/Chrome/Profile 1"))
     with pytest.raises(RuntimeError, match="exclusivo"):
         _profile_path()
