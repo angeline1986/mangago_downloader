@@ -46,7 +46,7 @@
   function render() {
     const root = $('lezhinEpisodes'); root.replaceChildren();
     state.chapters.forEach(ch => {
-      const row = document.createElement('div'); row.className = 'lezhin-episode';
+      const row = document.createElement('div'); row.className = 'comix-chapter-item lezhin-episode';
       const label = document.createElement('label'), check = document.createElement('input');
       check.type = 'checkbox'; check.checked = state.selected.has(ch.url); check.dataset.url = ch.url;
       check.disabled = ch.number === null;
