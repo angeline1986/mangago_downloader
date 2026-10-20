@@ -1,0 +1,45 @@
+<div class="page-heading">
+  <h1>Lezhin Downloader</h1>
+  <p>Use a sessão manual do Chrome Lezhin dedicado. A interface nunca solicita credenciais.</p>
+</div>
+<div class="comix-flow">
+  <section class="comix-step">
+    <div class="comix-step-heading comix-step-heading--with-session">
+      <span class="comix-step-number">1</span>
+      <div><h2>Obra</h2><p>Carregue uma obra salva ou informe uma URL Lezhin.</p></div>
+      <div class="lezhin-session-box">
+        <span class="lezhin-session-dot"></span>
+        <span id="lezhinSessionStatus" data-state="unknown">Verificando Chrome Lezhin…</span>
+        <button class="secondary" id="lezhinStartButton">Conectar / iniciar Chrome</button>
+      </div>
+    </div>
+    <div class="saved-work-choice-grid">
+      <div class="saved-work-choice-card">
+        <label class="saved-work-choice-title" for="lezhinSavedWork">Obras salvas</label>
+        <input class="setting-control wide" id="lezhinSavedWork" list="lezhinSavedWorkOptions" placeholder="Digite ou selecione…" autocomplete="off">
+        <datalist id="lezhinSavedWorkOptions"></datalist>
+      </div>
+      <div class="saved-work-choice-card">
+        <label class="saved-work-choice-title" for="lezhinWorkUrl">URL manual</label>
+        <div class="comix-load-row"><input class="setting-control wide" id="lezhinWorkUrl" type="url" list="lezhinSavedUrlOptions" placeholder="https://www.lezhinus.com/en/comic/slug" autocomplete="off">
+          <datalist id="lezhinSavedUrlOptions"></datalist><button class="primary" id="lezhinDiscoverButton">Listar episódios</button></div>
+      </div>
+    </div>
+    <p class="muted">Login é manual no Chrome dedicado. “Free” ou listado não confirma acesso ao leitor.</p>
+  </section>
+  <section class="comix-step hidden" id="lezhinEpisodeStep">
+    <div class="comix-chapters-head"><div><h2 id="lezhinWorkTitle">Episódios</h2><p id="lezhinEpisodeMeta">0 episódios</p></div>
+      <div class="chapter-actions"><button class="secondary" id="lezhinSelectAll">Todos</button><button class="secondary" id="lezhinSelectNone">Nenhum</button></div></div>
+    <div class="lezhin-episode-list" id="lezhinEpisodes"></div>
+    <div class="lezhin-actions"><span class="muted" id="lezhinSelectedCount">Nenhum episódio selecionado.</span>
+      <button class="secondary" id="lezhinVerifyButton">Verificar acesso selecionados</button></div>
+  </section>
+  <section class="comix-step">
+    <div class="comix-step-heading"><span class="comix-step-number">2</span><div><h2>Destino e execução</h2><p>A pasta raiz usa o destino dos Ajustes; o provider grava sob lezhinus.</p></div></div>
+    <div class="comix-config-grid">
+      <div class="field-group"><label for="lezhinTitle">Nome da obra</label><input class="setting-control wide" id="lezhinTitle" autocomplete="off"></div>
+      <div class="field-group"><label for="lezhinFolderPattern">Padrão das pastas</label><input class="setting-control wide" id="lezhinFolderPattern" value="Ch. 01" autocomplete="off"></div>
+    </div>
+    <div class="comix-download-bar"><span class="muted" id="lezhinQueueMessage">Apenas episódios verificados poderão ser enfileirados.</span><button class="primary" id="lezhinDownloadButton" disabled>Baixar selecionados verificados</button></div>
+  </section>
+</div>

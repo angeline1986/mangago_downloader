@@ -30,6 +30,8 @@ from src.ridi_provider import (
     ridi_cdp_browser_page,
     start_ridi_chrome,
 )
+from src.lezhin.urls import is_lezhin_episode_url
+from webapp.lezhin_routes import handle_get as handle_lezhin_get, handle_post as handle_lezhin_post
 from src.models import Chapter, Manga
 from src.search import get_manga_details, search_manga
 from src.saved_works import list_saved_works
@@ -118,6 +120,24 @@ def _configured_download_root(settings: Dict[str, Any] | None = None) -> Path:
     return Path(settings.get("download_location") or str(DEFAULT_OUTPUT_DIR)).resolve()
 
 
+def _enqueue_download(manga: Manga, chapters: List[Chapter]) -> str:
+    """Create a standard shared-queue job for any provider after its own validation."""
+    job_id = uuid.uuid4().hex[:12]
+    settings = _config.get_all()
+    download_root = str(_configured_download_root(settings))
+    rows = [{"number": ch.number, "title": ch.title or f"Capítulo {ch.number:g}", "url": ch.url,
+             "status": "queued", "progress": 0, "current_page": 0, "total_pages": 0,
+             "message": "Aguardando", "pdf_status": "pending", "pdf_error": "", "pdf_message": ""}
+            for ch in chapters]
+    with _jobs_lock:
+        _jobs[job_id] = {"id": job_id, "state": "queued", "phase": "queued", "message": "Na fila",
+                         "manga": _manga_dict(manga), "total": len(chapters), "completed": 0,
+                         "failed": 0, "progress": 0, "active_count": 0, "created_at": time.time(),
+                         "finished_at": None, "download_root": download_root, "chapters": rows}
+    threading.Thread(target=_run_download, args=(job_id, manga, chapters, settings), daemon=True).start()
+    return job_id
+
+
 def _path_is_relative_to(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
@@ -204,6 +224,13 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
                         chapter.number,
                         chapter.url,
                     )
+                    continue
+
+                if is_lezhin_episode_url(chapter.url):
+                    # Lezhin captures directly from its authorized reader in the provider.
+                    valid_chapters.append(chapter)
+                    _update_chapter_row(job_id, chapter.url, status="queued",
+                                        message="Leitor Lezhin identificado", total_pages=0, progress=0)
                     continue
 
                 if is_comix_chapter_url(chapter.url):
@@ -375,6 +402,15 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
         if path == "/static/app.js":
             self._file(STATIC_DIR / "app.js", "application/javascript; charset=utf-8")
             return
+        if path == "/static/lezhin.js":
+            self._file(STATIC_DIR / "lezhin.js", "application/javascript; charset=utf-8")
+            return
+        if path == "/static/lezhin.css":
+            self._file(STATIC_DIR / "lezhin.css", "text/css; charset=utf-8")
+            return
+        if path == "/static/lezhin_panel.html":
+            self._file(TEMPLATE_DIR / "lezhin_panel.html", "text/html; charset=utf-8")
+            return
         if path == "/api/health":
             self._json({"ok": True, "app": "Mangago Downloader Web V2"})
             return
@@ -383,6 +419,10 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/ridi/session":
             self._json(get_ridi_session_status())
+            return
+        if path.startswith("/api/lezhinus/"):
+            status, result = handle_lezhin_get(path)
+            self._json(result, status)
             return
         if path == "/api/saved-works":
             provider = (parse_qs(parsed.query).get("provider") or [""])[0].strip().lower()
@@ -423,6 +463,10 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         payload = self._read_json()
+        if path.startswith("/api/lezhinus/"):
+            status, result = handle_lezhin_post(path, payload, _enqueue_download)
+            self._json(result, status)
+            return
         if path == "/api/manga":
             url = str(payload.get("url") or "").strip()
             if not url:
@@ -528,20 +572,7 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
             if not chapters:
                 self._json({"error": "Nenhum capítulo válido foi informado."}, 400)
                 return
-            job_id = uuid.uuid4().hex[:12]
-            settings = _config.get_all()
-            download_root = str(_configured_download_root(settings))
-            rows = [{"number": ch.number, "title": ch.title or f"Capítulo {ch.number:g}", "url": ch.url,
-                     "status": "queued", "progress": 0, "current_page": 0, "total_pages": 0, "message": "Aguardando",
-                     "pdf_status": "pending", "pdf_error": "", "pdf_message": ""}
-                    for ch in chapters]
-            with _jobs_lock:
-                _jobs[job_id] = {
-                    "id": job_id, "state": "queued", "phase": "queued", "message": "Na fila", "manga": _manga_dict(manga),
-                    "total": len(chapters), "completed": 0, "failed": 0, "progress": 0, "active_count": 0,
-                    "created_at": time.time(), "finished_at": None, "download_root": download_root, "chapters": rows,
-                }
-            threading.Thread(target=_run_download, args=(job_id, manga, chapters, settings), daemon=True).start()
+            job_id = _enqueue_download(manga, chapters)
             self._json({"job_id": job_id}, 202)
             return
 

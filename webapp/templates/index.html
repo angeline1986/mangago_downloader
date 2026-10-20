@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Mangago Downloader</title>
   <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/lezhin.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -29,6 +30,7 @@
         <button class="nav-item" data-page="manga" id="mangaNav" disabled><span>▣</span> Mangá</button>
         <button class="nav-item" data-page="comix"><span>◫</span> Comix</button>
         <button class="nav-item" data-page="ridi"><span>▤</span> RIDI</button>
+        <button class="nav-item" data-page="lezhinus"><span>▧</span> Lezhin</button>
         <button class="nav-item" data-page="downloads"><span>↓</span> Downloads <em id="downloadBadge"></em></button>
         <button class="nav-item" data-page="settings"><span>⚙</span> Ajustes</button>
         <button class="nav-item shutdown-nav-item" id="shutdownButton" type="button" title="Encerrar"><span>⏻</span> Encerrar</button>
@@ -214,6 +216,8 @@
 
         </div>
       </section>
+
+      <section class="page" id="page-lezhinus"><div id="lezhinPanel"></div></section>
 
       <section class="page" id="page-comix">
         <div class="page-heading">
@@ -505,5 +509,6 @@
 
   <div class="toast" id="toast"></div>
   <script src="/static/app.js"></script>
+  <script src="/static/lezhin.js"></script>
 </body>
 </html>

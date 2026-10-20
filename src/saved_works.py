@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 PROJECT_DIR=Path(__file__).resolve().parents[1]
 SAVED_WORKS_DIR=PROJECT_DIR/'data'/'saved_works'
-SUPPORTED_PROVIDERS=frozenset({'comix','mangago','ridi'})
+SUPPORTED_PROVIDERS=frozenset({'comix','lezhinus','mangago','ridi'})
 def list_saved_works(provider: str):
     provider=str(provider or '').strip().lower()
     if provider not in SUPPORTED_PROVIDERS: raise ValueError(f'Provider de obras salvas inválido: {provider}')
