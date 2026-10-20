@@ -19,5 +19,32 @@
 #page-lezhinus .lezhin-access[data-state="authentication_required"],
 #page-lezhinus .lezhin-access[data-state="unavailable"]{color:var(--danger)}
 #page-lezhinus .lezhin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap}
+
+/* Lezhin: mesmas proporções do cabeçalho de sessão do RIDI. */
+#page-lezhinus .lezhin-session-box{flex:0 0 auto;min-width:0}
+#page-lezhinus .lezhin-session-box #lezhinSessionStatus{
+  display:inline-block;
+  margin:0;
+  white-space:nowrap;
+  font-size:.78rem;
+}
+#page-lezhinus .lezhin-session-box #lezhinStartButton{flex:0 0 auto;white-space:nowrap}
+
+/* Botão preso ao lado direito do campo, seguindo a linha manual do RIDI. */
+#page-lezhinus .saved-work-manual-row{display:flex;align-items:center;gap:8px;min-width:0}
+#page-lezhinus .saved-work-manual-row #lezhinWorkUrl{flex:1 1 0;min-width:0}
+#page-lezhinus .saved-work-manual-row #lezhinDiscoverButton{
+  flex:0 0 auto;
+  width:auto;
+  white-space:nowrap;
+  padding-inline:12px;
+}
+
 @media(max-width:860px){#page-lezhinus .lezhin-session-box{width:100%;margin:10px 0 0 40px;white-space:normal}}
 @media(max-width:700px){#page-lezhinus .lezhin-actions{flex-direction:column;align-items:stretch}}
+
+/* LEZHIN_RIDI_LIST_V2: reproduz estrutura de itens do RIDI. */
+#page-lezhinus .lezhin-session-dot[data-state="connected"]{background:var(--success)}
+#page-lezhinus #lezhinSessionStatus[data-state="connected"]{color:var(--success)}
+#page-lezhinus .lezhin-episode-list{margin-top:0}
+#page-lezhinus .lezhin-episode-check{accent-color:var(--primary)}

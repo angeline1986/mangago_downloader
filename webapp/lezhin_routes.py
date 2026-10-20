@@ -34,7 +34,10 @@ def handle_get(path: str) -> tuple[int, dict]:
 def handle_post(path: str, payload: dict, enqueue: Callable) -> tuple[int, dict]:
     if path == "/api/lezhinus/session/start":
         try:
-            return 200, start_lezhin_chrome()
+            result = start_lezhin_chrome()
+            if result.get("chrome_state") == "error":
+                return 502, {"error": result.get("message") or "Falha na sessão Chrome Lezhin."}
+            return 200, result
         except Exception:
             return 502, {"error": "Não foi possível iniciar o Chrome Lezhin dedicado."}
     if path == "/api/lezhinus/chapters":

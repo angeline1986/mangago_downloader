@@ -16,14 +16,19 @@
     paid_access_unverified: 'Pago · não verificado', unlocked: 'Desbloqueado',
     accessible_verified: 'Acessível', unavailable: 'Indisponível',
     authentication_required: 'Login necessário' })[status] || 'Acesso pendente';
+  // LEZHIN_RIDI_LIST_V2: status de conexão, não de autorização de leitura.
   function session(status) {
     const el = $('lezhinSessionStatus'), dot = document.querySelector('.lezhin-session-dot');
     if (!el) return;
-    const state = status.session_state === 'authenticated' ? 'connected' :
-      status.session_state === 'unauthenticated' ? 'unauthenticated' :
-      status.chrome_state === 'error' ? 'error' : status.chrome_state === 'unavailable' ? 'offline' : 'unknown';
-    el.dataset.state = state; if (dot) dot.dataset.state = state;
-    el.textContent = status.message || 'Estado da sessão não confirmado.';
+    const chrome = status?.chrome_state;
+    const visual = chrome === 'connected' ? 'connected' :
+      chrome === 'error' ? 'error' : 'offline';
+    const label = { connected: 'Online', offline: 'Offline', error: 'Erro' }[visual];
+    el.dataset.state = visual;
+    if (dot) dot.dataset.state = visual;
+    el.textContent = label;
+    el.title = status?.message || (visual === 'connected'
+      ? 'Chrome conectado. Acesso aos episódios não confirmado.' : label);
   }
   async function refreshSession() {
     try { session(await api('/api/lezhinus/session')); }
@@ -39,58 +44,60 @@
     } catch (error) { toast(error.message); }
   }
   function updateCount() {
-    const count = state.chapters.filter(ch => state.selected.has(ch.url) && ch.number !== null).length;
-    $('lezhinSelectedCount').textContent = count ? `${count} episódio(s) selecionado(s).` : 'Nenhum episódio selecionado.';
-    $('lezhinDownloadButton').disabled = !state.chapters.some(ch => state.selected.has(ch.url) && ch.availability === 'accessible_verified' && ch.number !== null);
+    const selected = state.chapters.filter(ch => state.selected.has(ch.url) && ch.number !== null).length;
+    $('lezhinEpisodeMeta').textContent = `${state.chapters.length} episódio(s) · ${selected} selecionado(s)`;
+    // O backend sempre revalida cada episódio; não confundir seleção com acesso.
+    $('lezhinDownloadButton').disabled = selected === 0;
   }
   function render() {
     const root = $('lezhinEpisodes'); root.replaceChildren();
     state.chapters.forEach(ch => {
-      const row = document.createElement('div'); row.className = 'comix-chapter-item lezhin-episode';
-      const label = document.createElement('label'), check = document.createElement('input');
-      check.type = 'checkbox'; check.checked = state.selected.has(ch.url); check.dataset.url = ch.url;
+      const row = document.createElement('label');
+      row.className = 'comix-chapter-item';
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'lezhin-episode-check';
+      check.checked = state.selected.has(ch.url);
       check.disabled = ch.number === null;
-      check.addEventListener('change', () => { check.checked ? state.selected.add(ch.url) : state.selected.delete(ch.url); updateCount(); });
-      const title = document.createElement('span'); title.className = 'lezhin-episode-title';
-      title.textContent = `${ch.number == null ? 'Especial · sem número' : `Ep. ${ch.number}`} · ${ch.title}`;
-      label.append(check, title);
-      const access = document.createElement('span'); access.className = 'lezhin-access';
-      access.dataset.state = ch.availability;
-      access.textContent = ch.number === null ? 'Sem número · não enfileirável' : labelFor(ch.availability);
-      row.append(label, access); root.append(row);
+      check.dataset.url = ch.url;
+      check.addEventListener('change', () => {
+        if (check.checked) state.selected.add(ch.url);
+        else state.selected.delete(ch.url);
+        updateCount();
+      });
+      const title = document.createElement('b');
+      title.textContent = ch.number === null ? 'Especial · sem número' : `Ep. ${ch.number}`;
+      title.title = ch.title || title.textContent;
+      row.append(check, title);
+      root.append(row);
     });
     updateCount();
   }
   async function discover() {
+    const current = await api('/api/lezhinus/session').catch(() => null);
+    if (!current || current.chrome_state !== 'connected') {
+      session(current || { chrome_state: 'unavailable' });
+      return toast('Clique em Iniciar Lezhin antes de Desvendar.');
+    }
     const url = $('lezhinWorkUrl').value.trim(); $('lezhinDiscoverButton').disabled = true;
     try {
       const data = await api('/api/lezhinus/chapters', { method: 'POST', body: JSON.stringify({ url }) });
       state.workUrl = data.url; state.title = data.title; state.chapters = data.chapters || [];
-      state.selected.clear(); $('lezhinTitle').value = state.title;
+      state.selected.clear();
+      state.chapters.filter(ch => ch.number !== null).forEach(ch => state.selected.add(ch.url));
+      $('lezhinTitle').value = state.title;
       $('lezhinWorkTitle').textContent = state.title; $('lezhinEpisodeMeta').textContent = `${state.chapters.length} episódios listados`;
       $('lezhinEpisodeStep').classList.remove('hidden'); render();
       toast(`${state.chapters.length} episódios listados. Acesso ainda não confirmado.`);
     } catch (error) { toast(error.message); }
     finally { $('lezhinDiscoverButton').disabled = false; }
   }
-  async function verifySelected() {
-    const selected = state.chapters.filter(ch => state.selected.has(ch.url));
-    if (!selected.length) return toast('Selecione episódios para verificar.');
-    $('lezhinVerifyButton').disabled = true;
-    try {
-      for (const ch of selected) {
-        try { const result = await api('/api/lezhinus/verify', { method: 'POST', body: JSON.stringify({ url: ch.url }) }); ch.availability = result.availability; }
-        catch (error) { ch.availability = error.message.includes('AUTH_REQUIRED') ? 'authentication_required' : 'listed_unverified'; }
-        render();
-        if (ch.availability === 'authentication_required') break;
-      }
-    } finally { $('lezhinVerifyButton').disabled = false; }
-  }
+
   async function queue() {
     const folder = $('lezhinFolderPattern').value.trim() || 'Ch. 01';
-    const chapters = state.chapters.filter(ch => state.selected.has(ch.url) && ch.availability === 'accessible_verified' && ch.number !== null)
+    const chapters = state.chapters.filter(ch => state.selected.has(ch.url) && ch.number !== null)
       .map(ch => ({ number: ch.number, title: ch.title, url: ch.url, folder_pattern: folder }));
-    if (!chapters.length) return toast('Verifique o acesso antes de enfileirar.');
+    if (!chapters.length) return toast('Selecione ao menos um episódio.');
     $('lezhinDownloadButton').disabled = true;
     try {
       await api('/api/lezhinus/downloads', { method: 'POST', body: JSON.stringify({ manga: { title: $('lezhinTitle').value.trim() || state.title, url: state.workUrl }, chapters }) });
@@ -103,18 +110,34 @@
   async function startChrome() {
     const button = $('lezhinStartButton'); button.disabled = true;
     try {
-      session(await api('/api/lezhinus/session/start', { method: 'POST', body: '{}' }));
-      for (let i = 0; i < 12; i++) { await new Promise(resolve => setTimeout(resolve, 1500)); await refreshSession(); }
-    } catch (error) { toast(error.message); }
-    finally { button.disabled = false; }
+      const started = await api('/api/lezhinus/session/start', { method: 'POST', body: '{}' });
+      if (started.chrome_state === 'error') throw new Error(started.message || 'Falha no Chrome Lezhin.');
+      session(started);
+      if (started.chrome_state !== 'connected') {
+        for (let i = 0; i < 12; i++) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          const current = await api('/api/lezhinus/session');
+          session(current);
+          if (current.chrome_state === 'connected') break;
+          if (current.chrome_state === 'error') throw new Error(current.message || 'Falha na sessão Lezhin.');
+        }
+      }
+      const current = await api('/api/lezhinus/session');
+      session(current);
+      if (current.chrome_state !== 'connected')
+        throw new Error(current.message || 'Chrome Lezhin não ficou disponível.');
+    } catch (error) {
+      toast(error.message);
+      session({ chrome_state: 'unavailable', message: error.message });
+    } finally { button.disabled = false; }
   }
   async function init() {
     try { $('lezhinPanel').innerHTML = await (await fetch('/static/lezhin_panel.html')).text(); }
     catch (_) { return; }
-    await Promise.all([savedWorks(), refreshSession()]);
+    session({ chrome_state: 'unavailable' });
+    await savedWorks();
     $('lezhinStartButton').addEventListener('click', startChrome);
     $('lezhinDiscoverButton').addEventListener('click', discover);
-    $('lezhinVerifyButton').addEventListener('click', verifySelected);
     $('lezhinDownloadButton').addEventListener('click', queue);
     $('lezhinSelectAll').addEventListener('click', () => { state.chapters.filter(ch => ch.number !== null).forEach(ch => state.selected.add(ch.url)); render(); });
     $('lezhinSelectNone').addEventListener('click', () => { state.selected.clear(); render(); });
@@ -125,7 +148,6 @@
     $('lezhinWorkUrl').addEventListener('change', event => {
       const work = state.works.find(item => item.url === event.target.value); if (work) $('lezhinSavedWork').value = work.name;
     });
-    setInterval(refreshSession, 15000);
   }
   init();
 })();

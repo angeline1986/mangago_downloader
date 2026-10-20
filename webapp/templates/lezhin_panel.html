@@ -9,7 +9,7 @@
       <div><h2>Obra</h2><p>Use a página principal da obra no Lezhin, sem URL de episódio.</p></div>
       <div class="ridi-heading-session lezhin-session-box">
         <span class="lezhin-session-dot" aria-hidden="true"></span>
-        <span id="lezhinSessionStatus" data-state="unknown">Verificando Chrome Lezhin…</span>
+        <span id="lezhinSessionStatus" data-state="offline">Offline</span>
         <button class="secondary" id="lezhinStartButton">Iniciar Lezhin</button>
       </div>
     </div>
@@ -26,7 +26,7 @@
         <div class="comix-load-row saved-work-manual-row">
           <input class="setting-control wide" id="lezhinWorkUrl" type="url" list="lezhinSavedUrlOptions" placeholder="https://www.lezhinus.com/en/comic/slug" autocomplete="off">
           <datalist id="lezhinSavedUrlOptions"></datalist>
-          <button class="primary" id="lezhinDiscoverButton">Listar episódios</button>
+          <button class="primary" id="lezhinDiscoverButton">Desvendar</button>
         </div>
       </div>
     </div>
@@ -43,8 +43,7 @@
       <div class="chapter-actions"><button class="secondary" id="lezhinSelectAll">Todos</button><button class="secondary" id="lezhinSelectNone">Nenhum</button></div>
     </div>
     <div class="comix-chapter-grid lezhin-episode-list" id="lezhinEpisodes"></div>
-    <div class="lezhin-actions"><span class="muted" id="lezhinSelectedCount">Nenhum episódio selecionado.</span>
-      <button class="secondary" id="lezhinVerifyButton">Verificar acesso selecionados</button></div>
+
   </section>
   <div class="comix-flow-arrow" aria-hidden="true">↓</div>
   <section class="comix-step">
