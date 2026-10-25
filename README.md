@@ -1,6 +1,6 @@
 # Mangago Downloader
 
-A modern manga downloader for Mangago.me featuring both a beautiful interactive CLI (Typer + Rich) and a sleek GUI. Supports search, downloads, chapter selection, PDF/CBZ conversion, and threaded parallel downloads.
+A manga downloader for Mangago.me with an interactive CLI (Typer + Rich), PyQt6 GUI, and local Web V2 interface. Supports search or direct URLs, chapter selection, image downloads, PDF/CBZ conversion, and progress tracking.
 
 ## Features
 
@@ -9,9 +9,10 @@ A modern manga downloader for Mangago.me featuring both a beautiful interactive 
 - ⚡ Threading: Parallel and concurrent downloads for speed.
 - 📚 Conversion: Save as PDF or CBZ.
 - 🗑️ Cleanup: Option to delete images after successful conversion.
+- 🖥️ Local Web V2: Search, chapter selection, download settings, and live progress in a browser.
 - 🎨 **User Interfaces:**
   - **CLI (Command Line Interface):** Built with `Typer` and `Rich`, offering a fully interactive, menu-driven experience with rich tables, live progress bars, and stylized prompts.
- - **GUI (Graphical User Interface):** Developed using `PyQt6`, providing a modern, sleek, and intuitive visual interface with dedicated sections for Search, Details, Configuration, and Progress monitoring.
+  - **GUI (Graphical User Interface):** Developed using `PyQt6`, providing a visual interface with dedicated sections for Search, Details, Configuration, and Progress monitoring.
 
 ## Installation
 
@@ -111,11 +112,18 @@ mangago_downloader/
 │   └── styles.py          # Styling and themes
 │
 │── src/
-│   ├── search.py          # Manga search logic
-│   ├── downloader.py      # Core download + threading
+│   ├── search.py          # Manga search and metadata
+│   ├── downloader.py      # Mangago reader discovery and image downloads
+│   ├── browser.py         # Isolated Playwright browser contexts
+│   ├── chapter_validation.py # Image-set integrity and completion markers
+│   ├── output_paths.py    # Canonical image/PDF/CBZ directories
 │   ├── converter.py       # PDF/CBZ conversion
-│   ├── utils.py           # Helpers (headers, requests, paths)
-│   └── models.py          # Data classes for Manga, Chapters
+│   ├── utils.py           # HTTP sessions, headers, and helpers
+│   └── models.py          # Manga, Chapter, and DownloadResult data classes
+│
+├── webapp/                # Local Web V2 frontend and HTTP server
+├── data/saved_works/      # Saved-title lists
+├── output/                # Default download destination
 │
 │── launcher.py            # Unified launcher for CLI/GUI
 │── gui_config.json        # GUI configuration file
@@ -140,22 +148,48 @@ mangago_downloader/
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-## Playwright + validated image pipeline
+## Mangago reader and image pipeline
 
-The downloader uses Playwright instead of Selenium/ChromeDriver. For paginated Mangago readers it identifies the current `/pg-N/` page and locates the matching image inside `#pic_container`, with visible/CDN-image fallbacks. Downloads are validated as real images before being written.
+The Mangago provider uses Playwright with an isolated headless Chromium context; it does not use the user's personal Chrome profile. Chapter discovery expands the site's “show all chapters” control when present, removes duplicate links, and orders numbered chapters numerically.
 
-Individual image output defaults to **PNG**. PNG conversion is lossless with respect to the downloaded source: it does not add JPEG-style quality loss, although it cannot restore detail already lost in a source JPEG/WebP. When `keep_originals` is enabled, the exact downloaded source is preserved under the chapter's `originais/` folder.
+Two reader layouts are supported:
 
-Relevant GUI configuration keys:
+- **Paginated reader (`/pg-N/`):** reads links from the reader's page selector, keeps pages belonging to the current chapter, and resolves each image from `#pic_container` with visible-image and CDN fallbacks. If no page selector exists, it falls back to the current page image.
+- **Long-strip reader:** scrolls to load images, collects unique image URLs in DOM order, and stops after the image count stabilizes.
+
+Mangago reader pages are rendered in Playwright because direct requests to those pages can return HTTP 403. Image responses are validated before saving. A chapter is marked complete only after validation confirms every expected page is present, readable, and unique; missing, invalid, or duplicate page numbers leave it incomplete.
+
+Downloads use at most **3 page workers** per chapter. The default minimum delay between page-processing starts is **2 seconds**, with configurable retries and timeout.
+
+### Image quality and output layout
+
+The default image mode is **Original**: it saves the received image bytes without conversion or recompression. Optional **PNG** mode converts the decoded image to PNG; this adds no further lossy compression but cannot restore detail already lost in a source JPEG/WebP. When PNG mode and `keep_originals` are both enabled, the source bytes are also kept under `originais/`.
+
+The default output layout is:
+
+```text
+output/mangago/<title>/IMG/<chapter>/page-001.<ext>
+output/mangago/<title>/PDF/<chapter>/<chapter>.pdf
+output/mangago/<title>/PDF/<chapter>/<chapter>.cbz
+```
+
+Chapter image folders use an in-progress marker while downloading and a completion marker only after structural validation succeeds. Existing valid page files can be retained on retry; partial chapters are not reported as complete.
+
+Relevant settings (shared by the GUI and Web V2) include:
 
 ```json
 {
-  "image_format": "png",
-  "keep_originals": true
+  "format": "images",
+  "image_format": "original",
+  "keep_originals": false,
+  "max_workers": 3,
+  "page_delay": 2.0,
+  "retry_count": 3,
+  "timeout": 30
 }
 ```
 
-Use `image_format: "original"` to skip conversion and keep only the source format.
+Set `image_format` to `png` to convert saved pages, and enable `keep_originals` to preserve the source files alongside them. `format` selects image folders, PDF, or CBZ output.
 
 ## Web V2 (HTML/CSS/JS local)
 
@@ -173,4 +207,4 @@ O navegador abre automaticamente em `http://127.0.0.1:8765`. Para iniciar sem ab
 MANGAGO_WEB_NO_BROWSER=1 mangago-downloader-web
 ```
 
-A Web V2 oferece busca, URL direta, detalhes e capítulos, seleção por intervalo, light/dark theme, ajustes com salvamento automático e progresso real por capítulo e por página. O delay padrão entre páginas continua em **2,0 segundos**.
+A Web V2 oferece busca por título ou URL direta, seleção de capítulos e intervalos, tema claro/escuro, ajustes com salvamento automático e progresso por capítulo e página. Ela compartilha o mesmo núcleo Mangago descrito acima; o atraso padrão entre o início do processamento das páginas é **2,0 segundos**.

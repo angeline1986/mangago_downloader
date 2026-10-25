@@ -4,6 +4,14 @@ __pycache__/
 *$py.class
 .DS_Store
 
+# Local backup files and folders
+*.bak
+*.bak.*
+*.bak_*
+.*_backup/
+.*_backups/
+*_revisao.patch
+
 # C extensions
 *.so
 
@@ -141,6 +149,7 @@ celerybeat.pid
 .env
 .envrc
 .venv
+.venv-test/
 env/
 venv/
 ENV/
