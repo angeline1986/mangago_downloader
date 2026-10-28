@@ -111,7 +111,11 @@ def _refresh_job_progress(job_id: str) -> None:
             job["progress"] = 0
             job["active_count"] = 0
             return
-        job["progress"] = max(0, min(100, round(sum(float(r.get("progress", 0)) for r in rows) / total)))
+        completed_progress = sum(
+            100 if row.get("status") == "failed" else float(row.get("progress", 0))
+            for row in rows
+        )
+        job["progress"] = max(0, min(100, round(completed_progress / total, 1)))
         job["active_count"] = sum(1 for r in rows if r.get("status") in {"downloading", "converting"})
 
 
@@ -280,20 +284,37 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
                 web_logger.exception("[JOB %s] discovery Ch.%s falhou: %s", job_id[:8], chapter.number, exc)
                 failed += 1
                 completed += 1
-                _update_chapter_row(job_id, chapter.url, status="failed", message=str(exc), progress=100)
+                _update_chapter_row(job_id, chapter.url, status="failed", message=str(exc))
                 _update_job(job_id, completed=completed, failed=failed)
                 _refresh_job_progress(job_id)
 
         if valid_chapters:
-            _update_job(job_id, phase="downloading", message=f"Baixando páginas com até {workers} downloads simultâneos…")
+            _update_job(job_id, phase="downloading", message="Baixando capítulos…")
+
+            def on_chapter_start(chapter: Chapter) -> None:
+                _update_chapter_row(
+                    job_id, chapter.url, status="downloading",
+                    message="Preparando leitor…", progress=0,
+                    current_page=0,
+                )
+                _update_job(job_id, message=f"Baixando capítulo {chapter.number:g}…")
+                _refresh_job_progress(job_id)
+                web_logger.info("[JOB %s] capítulo %s iniciado", job_id[:8], chapter.number)
 
             def on_page(chapter: Chapter, current: int, total_pages: int) -> None:
                 pct = round((current / total_pages) * 100) if total_pages else 0
                 _update_chapter_row(job_id, chapter.url, status="downloading", current_page=current,
-                                    total_pages=total_pages, progress=pct, message=f"Baixando · {current}/{total_pages} páginas")
+                                    total_pages=total_pages, progress=pct,
+                                    message=(f"Baixando · {current}/{total_pages} páginas"
+                                             if current else f"Leitor pronto · 0/{total_pages} páginas"))
                 _refresh_job_progress(job_id)
+                web_logger.info(
+                    "[JOB %s] capítulo %s · página=%s/%s progresso=%s%%",
+                    job_id[:8], chapter.number, current, total_pages, pct,
+                )
 
             downloader.progress_callback = on_page
+            downloader.chapter_start_callback = on_chapter_start
 
             def on_result(result) -> None:
                 nonlocal completed, failed
@@ -336,10 +357,16 @@ def _run_download(job_id: str, manga: Manga, chapters: List[Chapter], settings: 
                             pass
                 else:
                     failed += 1
-                    _update_chapter_row(job_id, chapter.url, status="failed", progress=100, message=result.error_message or "Falha no download")
+                    _update_chapter_row(job_id, chapter.url, status="failed", message=result.error_message or "Falha no download")
                 completed += 1
                 _update_job(job_id, completed=completed, failed=failed)
                 _refresh_job_progress(job_id)
+                web_logger.info(
+                    "[JOB %s] capítulo %s %s · concluídos=%s/%s falhas=%s",
+                    job_id[:8], chapter.number,
+                    "concluído" if result.success else "falhou",
+                    completed, len(chapters), failed,
+                )
 
             downloader.download_chapters(manga, valid_chapters, result_callback=on_result)
 
@@ -404,6 +431,12 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
             return
         if path == "/static/app.js":
             self._file(STATIC_DIR / "app.js", "application/javascript; charset=utf-8")
+            return
+        if path == "/static/downloads.js":
+            self._file(STATIC_DIR / "downloads.js", "application/javascript; charset=utf-8")
+            return
+        if path == "/static/downloads.css":
+            self._file(STATIC_DIR / "downloads.css", "text/css; charset=utf-8")
             return
         if path == "/static/lezhin.js":
             self._file(STATIC_DIR / "lezhin.js", "application/javascript; charset=utf-8")

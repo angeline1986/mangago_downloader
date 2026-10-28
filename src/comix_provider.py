@@ -26,6 +26,7 @@ from .output_paths import chapter_image_dir
 from .utils import DownloadError, ParsingError, create_directory, sanitize_filename
 from .browser import DEFAULT_USER_AGENT
 from .comix_catalog import collect_chapter_groups, has_next_page
+from .comix_media import RenderedImageResponses
 
 
 COMIX_HOSTS = ("comix.to", "www.comix.to")
@@ -702,6 +703,7 @@ async def _download_comix_chapter_async(
         await context.add_init_script(COMIX_INIT_SCRIPT)
         page = await context.new_page()
         page.set_default_timeout(timeout_ms)
+        rendered_images = RenderedImageResponses(page)
 
         try:
             response = await page.goto(
@@ -730,6 +732,9 @@ async def _download_comix_chapter_async(
                 raise ParsingError("Comix reader data-page sequence has gaps.")
             total = len(ordered)
 
+            if callback:
+                callback(chapter, 0, total)
+
             write_download_in_progress_marker(
                 chapter_dir,
                 expected_pages=total,
@@ -745,20 +750,7 @@ async def _download_comix_chapter_async(
 
                     if media_kind == "img":
                         image_url = await _normal_image_url(wrapper, timeout_ms)
-                        image_response = await context.request.get(
-                            image_url,
-                            headers={
-                                "Referer": "https://comix.to/",
-                                "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-                            },
-                            timeout=timeout_ms,
-                        )
-                        if not image_response.ok:
-                            raise DownloadError(
-                                f"Comix image request returned HTTP {image_response.status}"
-                            )
-                        raw = await image_response.body()
-                        content_type = image_response.headers.get("content-type", "")
+                        raw, content_type = await rendered_images.read(image_url)
                     elif media_kind == "canvas":
                         draws, special_url, snapshot_png = await _capture_special(
                             page, wrapper, page_number, total, timeout_ms

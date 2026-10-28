@@ -1,0 +1,63 @@
+.job-progress-track,
+.chapter-progress-track {
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.job-progress-track {
+  height: 8px;
+  margin: 15px 0 8px;
+}
+
+.chapter-progress-track {
+  height: 6px;
+  margin-top: 6px;
+}
+
+.job-progress-fill,
+.chapter-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.queue-chapter {
+  min-width: 0;
+}
+
+.queue-chapter > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-chapter small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-3);
+}
+
+.queue-row.completed .chapter-progress-fill {
+  background: var(--success);
+}
+
+.queue-row.failed .chapter-progress-fill {
+  background: var(--danger);
+}
+
+@media (max-width: 700px) {
+  .queue-row {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .queue-status {
+    grid-column: 2;
+  }
+
+  .pdf-action {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

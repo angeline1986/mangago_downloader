@@ -739,6 +739,9 @@ class ChapterDownloader:
         results: List[DownloadResult] = []
         for chapter in chapters:
             try:
+                start_callback = getattr(self, "chapter_start_callback", None)
+                if start_callback:
+                    start_callback(chapter)
                 result = self.download_chapter(manga, chapter)
             except Exception as exc:
                 result = DownloadResult(chapter=chapter, success=False, error_message=str(exc))
