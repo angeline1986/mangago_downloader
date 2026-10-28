@@ -40,6 +40,7 @@ class ComixProviderTests(unittest.TestCase):
                 "url": "/title/test/110-chapter-1",
                 "title": "Ch.1",
                 "source": "TappyToon",
+                "official": True,
             },
             {
                 "url": "/title/test/111-chapter-2",
@@ -56,6 +57,7 @@ class ComixProviderTests(unittest.TestCase):
         self.assertEqual([item["number"] for item in chapters], [1.0, 2.0])
         self.assertEqual(len(chapters), 2)
         self.assertEqual(chapters[0]["source"], "TappyToon")
+        self.assertTrue(chapters[0]["official"])
         self.assertEqual(
             chapters[0]["url"],
             "https://comix.to/title/test/110-chapter-1",

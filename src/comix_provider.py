@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -24,11 +25,13 @@ from .chapter_validation import (
 from .output_paths import chapter_image_dir
 from .utils import DownloadError, ParsingError, create_directory, sanitize_filename
 from .browser import DEFAULT_USER_AGENT
+from .comix_catalog import collect_chapter_groups, has_next_page
 
 
 COMIX_HOSTS = ("comix.to", "www.comix.to")
 COMIX_PAGE_SELECTOR = ".rpage-page[data-page]"
 COMIX_MEDIA_SELECTOR = ".rpage-page__img"
+catalog_logger = logging.getLogger("mangago.comix.catalog")
 
 # Minimal browser compatibility adjustments proven during the investigation.
 COMIX_INIT_SCRIPT = r"""
@@ -196,6 +199,7 @@ def _parse_comix_chapter_rows(rows: Sequence[dict], base_url: str) -> List[dict]
                 "url": url,
                 "title": title,
                 "source": source,
+                "official": bool(row.get("official", False)),
             }
         )
         seen_urls.add(url)
@@ -249,34 +253,16 @@ async def _discover_comix_chapters_async(title_url: str, timeout: int = 30) -> L
                 timeout=timeout_ms,
             )
 
-            raw_groups = await page.locator('a[href^="/groups/"]').evaluate_all(
-                """els => els.map(el => ({
-                    name: (el.textContent || '').trim(),
-                    href: el.getAttribute('href') || '',
-                    className: el.className || ''
-                }))"""
-            )
+            groups = await collect_chapter_groups(page, base_title_url, timeout_ms)
 
-            groups = {}
-
-            for item in raw_groups:
-                match = re.search(r"/groups/(\d+)", item.get("href") or "")
-                if not match:
-                    continue
-
-                group_id = match.group(1)
-
-                groups[group_id] = {
-                    "id": group_id,
-                    "name": str(item.get("name") or "").strip() or f"Group {group_id}",
-                    "official": "is-official" in str(item.get("className") or ""),
-                }
-
-            if not groups:
-                raise ParsingError("Comix title page exposed no chapter groups.")
-
-            for group in groups.values():
+            catalog_logger.info("Fontes encontradas: %s", len(groups))
+            for group in groups:
                 page_number = 1
+                group_count = 0
+                catalog_logger.info(
+                    "Consultando fonte %s · oficial=%s",
+                    group["name"], "sim" if group["official"] else "não",
+                )
 
                 while True:
                     page_url = (
@@ -323,8 +309,15 @@ async def _discover_comix_chapters_async(title_url: str, timeout: int = 30) -> L
                         row["official"] = group["official"]
 
                     collected.extend(rows)
-
+                    group_count += len(rows)
+                    catalog_logger.info(
+                        "Fonte %s · página=%s capítulos=%s acumulado=%s",
+                        group["name"], page_number, len(rows), group_count,
+                    )
+                    if not await has_next_page(page, page_number):
+                        break
                     page_number += 1
+                catalog_logger.info("Fonte %s concluída · capítulos=%s", group["name"], group_count)
         finally:
             await page.close()
             await context.close()

@@ -184,6 +184,10 @@ function normalizeComixSource(source){
 }
 
 function comixSourceType(source){
+  const chapter=comixState.chapters.find(ch=>ch.source===source);
+  if(chapter && typeof chapter.official==='boolean'){
+    return chapter.official?'official':'regular';
+  }
   return COMIX_OFFICIAL_SOURCES.has(normalizeComixSource(source))
     ? 'official'
     : 'regular';
@@ -458,8 +462,14 @@ function visibleComixChapters(){
 
 function visibleComixSources(){
   const sources=[...new Set(comixState.chapters.map(ch=>ch.source))];
-  if(comixState.sourceType==='all')return sources;
-  return sources.filter(source=>comixSourceType(source)===comixState.sourceType);
+  return sources
+    .filter(source=>comixState.sourceType==='all'
+      || comixSourceType(source)===comixState.sourceType)
+    .sort((a,b)=>{
+      const priority=Number(comixSourceType(b)==='official')
+        - Number(comixSourceType(a)==='official');
+      return priority||a.localeCompare(b);
+    });
 }
 
 function syncComixSourceTypeButtons(){
@@ -498,9 +508,8 @@ function renderComixSources(){
     counts.set(ch.source,(counts.get(ch.source)||0)+1);
   });
 
-  const visibleSources=new Set(visibleComixSources());
-  const entries=[...counts.entries()]
-    .filter(([source])=>visibleSources.has(source));
+  const entries=visibleComixSources()
+    .map(source=>[source,counts.get(source)||0]);
 
   box.innerHTML=entries.length
     ? entries.map(([source,count])=>`
@@ -582,6 +591,7 @@ async function loadComixChapters(){
   }
 
   $('#comixLoadButton').disabled=true;
+  $('#comixLoadButton').textContent='Buscando capítulos…';
   setBusy('Listando capítulos do Comix…');
 
   try{
@@ -604,9 +614,7 @@ async function loadComixChapters(){
       .map(source=>`<option value="${escAttr(source)}">${esc(source)}</option>`)
       .join('');
 
-    comixState.source=sources.includes('TappyToon')
-      ? 'TappyToon'
-      : sources[0];
+    comixState.source=sources[0];
 
     $('#comixSource').value=comixState.source;
 
@@ -639,6 +647,7 @@ async function loadComixChapters(){
   }finally{
     setBusy('Pronto');
     $('#comixLoadButton').disabled=false;
+    $('#comixLoadButton').textContent='Desvendar';
   }
 }
 

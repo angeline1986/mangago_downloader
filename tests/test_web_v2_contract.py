@@ -83,18 +83,28 @@ class WebV2ContractTests(unittest.TestCase):
                 "url": "https://comix.to/title/test/1-chapter-1",
                 "title": "Ch.1",
                 "source": "TappyToon",
+                "official": True,
             },
             {
                 "number": 2.0,
                 "url": "https://comix.to/title/test/2-chapter-2",
                 "title": "Ch.2",
                 "source": "TappyToon",
+                "official": True,
             },
             {
                 "number": 1.0,
                 "url": "https://comix.to/title/test/3-chapter-1",
                 "title": "Ch.1",
                 "source": "Lezhin",
+                "official": True,
+            },
+            {
+                "number": 1.0,
+                "url": "https://comix.to/title/test/4-chapter-1",
+                "title": "Ch.1",
+                "source": "Alpha Scan",
+                "official": False,
             },
         ]
 
@@ -113,7 +123,7 @@ class WebV2ContractTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(
             payload["sources"],
-            ["Lezhin", "TappyToon"],
+            ["Lezhin", "TappyToon", "Alpha Scan"],
         )
         self.assertEqual(payload["chapters"], fake_chapters)
 

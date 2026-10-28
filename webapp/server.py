@@ -357,9 +357,12 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
     server_version = "MangagoDownloaderWeb/2"
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        # Keep terminal output useful; ignore noisy static asset GETs.
-        if not str(args[0] if args else "").startswith("GET /static/"):
-            super().log_message(fmt, *args)
+        # Successful GET polling obscures the discovery progress in the terminal.
+        request = str(args[0] if args else "")
+        status = str(args[1] if len(args) > 1 else "")
+        if request.startswith("GET ") and status.startswith(("2", "3")):
+            return
+        super().log_message(fmt, *args)
 
     def _json(self, payload: Any, status: int = 200) -> None:
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -519,6 +522,8 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                 return
 
             try:
+                started = time.monotonic()
+                web_logger.info("Comix: iniciando descoberta de capítulos")
                 settings = _config.get_all()
                 timeout = int(settings.get("timeout", 30))
 
@@ -527,13 +532,21 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                     timeout=timeout,
                 )
 
+                official_sources = {
+                    item["source"] for item in chapters if item.get("official")
+                }
                 sources = sorted(
                     {
                         str(item.get("source") or "").strip()
                         for item in chapters
                         if item.get("source")
                     },
-                    key=str.lower,
+                    key=lambda source: (source not in official_sources, source.casefold()),
+                )
+                web_logger.info(
+                    "Comix: descoberta concluída · capítulos=%s fontes=%s oficiais=%s duração=%.1fs",
+                    len(chapters), len(sources), len(official_sources),
+                    time.monotonic() - started,
                 )
 
                 self._json(
@@ -544,6 +557,7 @@ class MangagoWebHandler(BaseHTTPRequestHandler):
                     }
                 )
             except Exception as exc:
+                web_logger.error("Comix: descoberta falhou · erro=%s", exc)
                 self._json({"error": str(exc)}, 502)
 
             return
@@ -672,6 +686,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPSer
 
 
 def main() -> None:
+    _configure_logging()
     host = "127.0.0.1"
     port = int(os.environ.get("MANGAGO_WEB_PORT", "8765"))
     url = f"http://{host}:{port}"
